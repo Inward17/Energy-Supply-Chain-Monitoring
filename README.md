@@ -88,7 +88,7 @@ This platform is a **multi-agent AI command centre** that:
 
 ### Core Design Principle: Shadow Cache Architecture
 
-Every external API is hit **only in the background** (cron_worker.py). The Streamlit UI **never blocks on a live API call**. This means:
+Every external API is hit **only in the background** (cron_worker.py). The React UI **never blocks on a live API call**. This means:
 - The dashboard loads in milliseconds regardless of external API state
 - A GDELT rate-limit or AIS outage is invisible to the end user
 - All agents read from local Postgres/Neo4j — zero latency, zero cost
@@ -208,7 +208,7 @@ The serving layer. Exposes all Python agent logic (fixer, spr, sentinel, briefin
 ---
 
 #### `cron_worker.py` — Background Pipeline Scheduler
-The engine that keeps the Shadow Cache fresh. Runs in a separate terminal alongside `streamlit run app.py`.
+The engine that keeps the Shadow Cache fresh. Runs in a separate terminal alongside `npm run dev`.
 
 **Pipeline steps** (sequential, every `CRON_INTERVAL_MINUTES` — default 60 min):
 
@@ -358,13 +358,14 @@ Uses **Gemini 2.5 Flash** to score batches of news headlines for geopolitical ri
 A zero-LLM computation layer. Reads from local Postgres/Neo4j and applies the **SDI formula**:
 
 ```text
-SDI = w1·P_risk + w2·ΔD_vessel + w3·ΔP_price
+SDI = w1·P_risk + w2·ΔD_vessel + w3·ΔP_price + w4·ΔP_freight
 
 Where:
-  P_risk   = Gemini Sentinel severity score (0–1)
-  ΔD_vessel = AIS vessel count deviation from baseline (0–1)
-  ΔP_price  = Brent price z-score vs 30-day mean (0–1)
-  w1=0.50, w2=0.30, w3=0.20  (overridable via SDI_W1/W2/W3 env vars)
+  P_risk     = Gemini Sentinel severity score (0–1)
+  ΔD_vessel  = AIS vessel count deviation from baseline (0–1)
+  ΔP_price   = Brent price z-score vs 30-day mean (0–1)
+  ΔP_freight = BOAT ETF price z-score vs 30-day mean (0–1)
+  w1=0.40, w2=0.25, w3=0.15, w4=0.20  (overridable via SDI_W1/W2/W3/W4 env vars)
 ```
 
 - `compute_current_sdi()` — real-time global risk snapshot for the dashboard header
@@ -440,7 +441,7 @@ Uses **Gemini 2.5 Flash** to write a formal Emergency Action Plan from the deter
 - Context: Crisis name, target refinery, SPR data (survival days, supply gap, macro impact), top reroute (port, grade, lead time, landed cost)
 - Output: 3 paragraphs — Situation Assessment → Procurement Directive → Macro-economic Mitigation
 
-Designed to be rendered directly in the War Room tab using `st.info()`.
+Designed to be rendered directly in the War Room tab.
 
 ---
 
@@ -475,11 +476,11 @@ Weights (`w1`, `w2`, `w3`) are overridable via `SDI_W1`, `SDI_W2`, `SDI_W3` envi
 
 | # | Tab | Description |
 |---|---|---|
-| 1 | 🌍 **Threat Map** | PyDeck globe displaying live vessel positions and a chokepoint risk heatmap |
+| 1 | 🌍 **Threat Map** | Interactive Deck.gl globe displaying live vessel positions and a chokepoint risk heatmap |
 | 2 | 🔴 **Risk Intelligence** | Gemini-scored event feed with SDI timeline chart |
 | 3 | 📈 **Market Pulse** | Brent/NG/XLE candlestick charts + price impact KPI cards |
 | 4 | 🔀 **Reroute Matrix** | Interactive 5-step procurement analysis — select a blocked chokepoint and destination refinery to get a ranked table of alternative crude sources |
-| 5 | 🛢️ **SPR Optimizer** | SPR burn-down simulator with Plotly chart, demand management playbook, and GDP/inflation impact |
+| 5 | 🛢️ **SPR Optimizer** | SPR burn-down simulator with Recharts graph, demand management playbook, and GDP/inflation impact |
 | 6 | ⚔️ **War Room** | One-click crisis scenario simulator — selects a scenario, runs the full pipeline, and generates an AI-written Executive Action Plan |
 
 ---
