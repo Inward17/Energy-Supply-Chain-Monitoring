@@ -43,6 +43,12 @@ FIXER_FALLBACK_DISTANCE_NM: int = 8_000
 #: composite score formula  (time_score = 1 - lead_time / ceiling)
 FIXER_WORST_CASE_LEAD_DAYS: int = 45
 
+#: Weights for the Fixer Agent's composite score formula (sum to 1.0)
+FIXER_WEIGHT_COST: float = 0.35
+FIXER_WEIGHT_TIME: float = 0.25
+FIXER_WEIGHT_RISK: float = 0.25
+FIXER_WEIGHT_CONGESTION: float = 0.15
+
 # ---------------------------------------------------------------------------
 # Sentinel Agent — Geopolitical Risk Scoring
 # ---------------------------------------------------------------------------
@@ -59,6 +65,13 @@ SENTINEL_DELTA_D_LOW: float = 0.1
 
 #: Severity threshold above which the high delta-D approximation is used
 SENTINEL_SEVERITY_THRESHOLD: float = 0.5
+
+# ---------------------------------------------------------------------------
+# AIS Ship Type Filtering
+# ---------------------------------------------------------------------------
+
+#: Standard AIS ship types for tankers (hazardous category D and tankers)
+TANKER_SHIP_TYPES: frozenset[int] = frozenset(range(80, 90))
 
 # ---------------------------------------------------------------------------
 # Modeler Agent — SDI Computation

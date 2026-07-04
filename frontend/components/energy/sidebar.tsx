@@ -1,9 +1,7 @@
 "use client"
 
-import { RefreshCw, Settings, SlidersHorizontal, Ship, ShieldAlert, Droplet, TrendingUp, Loader2 } from "lucide-react"
+import { RefreshCw, Settings, SlidersHorizontal } from "lucide-react"
 import { REGIONS } from "./data"
-import { fetchLiveMetrics, type LiveMetrics } from "@/lib/api"
-import { useEffect, useState } from "react"
 
 export function Sidebar({
   region,
@@ -24,19 +22,8 @@ export function Sidebar({
   onRefresh: () => void
   refreshing: boolean
 }) {
-  const [live, setLive] = useState<LiveMetrics | null>(null)
-
-  useEffect(() => {
-    const load = () => fetchLiveMetrics().then(setLive).catch(() => {})
-    load()
-    if (autoRefresh) {
-      const interval = setInterval(load, 30_000)
-      return () => clearInterval(interval)
-    }
-  }, [autoRefresh, refreshing])
-
   return (
-    <aside className="flex w-72 shrink-0 flex-col border-r border-slate-800 bg-slate-900/40">
+    <aside className="flex w-56 shrink-0 flex-col border-r border-slate-800 bg-slate-900/40">
       {/* Controls */}
       <div className="flex items-center gap-2 border-b border-slate-800 px-4 py-3.5">
         <Settings className="h-4 w-4 text-cyan-400" />
@@ -96,36 +83,8 @@ export function Sidebar({
         </div>
       </div>
 
-      {/* Live Metrics */}
+      {/* Live Metrics removed to reclaim space for main content */}
       <div className="mt-auto border-t border-slate-800 px-4 py-4">
-        <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-slate-500">
-          Live Metrics
-        </p>
-        
-        {!live ? (
-          <div className="flex h-32 items-center justify-center">
-            <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
-          </div>
-        ) : (
-          <>
-            <div className="mb-3">
-              <p className="font-mono text-5xl font-bold leading-none text-yellow-400">
-                {live.sdi_score.toFixed(1)}
-              </p>
-              <p className="mt-1 text-[11px] uppercase tracking-wider text-slate-400">
-                Supply Disruption Index
-              </p>
-            </div>
-
-            <ul className="space-y-2 text-sm">
-              <MetricRow icon={<Ship className="h-3.5 w-3.5 text-cyan-400" />} label="Vessels Tracked" value={String(live.vessel_count)} />
-              <MetricRow icon={<ShieldAlert className="h-3.5 w-3.5 text-rose-500" />} label="Active Alerts" value={String(live.active_alerts)} valueClass="text-rose-400" />
-              <MetricRow icon={<Droplet className="h-3.5 w-3.5 text-cyan-400" />} label="Brent" value={`$${live.current_brent.toFixed(2)}/bbl`} />
-              <MetricRow icon={<TrendingUp className="h-3.5 w-3.5 text-emerald-400" />} label="Est. Price Impact" value={`+$${live.price_impact_usd.toFixed(2)}/bbl`} valueClass="text-emerald-400" />
-            </ul>
-          </>
-        )}
-
         <button
           type="button"
           onClick={onRefresh}
@@ -139,24 +98,3 @@ export function Sidebar({
   )
 }
 
-function MetricRow({
-  icon,
-  label,
-  value,
-  valueClass = "text-white",
-}: {
-  icon: React.ReactNode
-  label: string
-  value: string
-  valueClass?: string
-}) {
-  return (
-    <li className="flex items-center justify-between">
-      <span className="flex items-center gap-1.5 text-slate-400">
-        {icon}
-        {label}
-      </span>
-      <span className={`font-mono font-medium ${valueClass}`}>{value}</span>
-    </li>
-  )
-}

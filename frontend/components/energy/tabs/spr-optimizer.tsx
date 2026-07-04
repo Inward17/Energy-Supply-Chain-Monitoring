@@ -174,7 +174,7 @@ export function SprOptimizer() {
           )}
 
           {result && (
-            <div className={isStale ? "opacity-50 transition-opacity" : "transition-opacity"}>
+            <div className={`space-y-4 ${isStale ? "opacity-50 transition-opacity" : "transition-opacity"}`}>
               {/* KPI cards */}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <StatChip
@@ -212,7 +212,7 @@ export function SprOptimizer() {
                   </p>
                   <div className="h-72">
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={burndown} margin={{ top: 8, right: 16, left: -12, bottom: 0 }}>
+                      <LineChart data={burndown} margin={{ top: 24, right: 16, left: -12, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                         <XAxis
                           dataKey="day"

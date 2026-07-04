@@ -221,6 +221,12 @@ def process_unprocessed_batch(batch_size: int = 5) -> int:
     if scored is None:
         return 0
 
+    # Filter out non-events (Gemini returns severity 0.1 and unknown when no disruption is found)
+    if scored.get("disruption_type", "").lower() == "unknown" or scored.get("severity", 1.0) <= 0.1:
+        logger.info("sentinel_agent: No disruption signal detected. Filtering out.")
+        mark_news_processed(news_ids)
+        return 0
+
     # Enrich SDI score using market data
     brent_stats = get_brent_rolling_stats()
     delta_p = normalise_price_delta(

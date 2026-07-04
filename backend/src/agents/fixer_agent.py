@@ -36,6 +36,10 @@ from src.utils.constants import (
     FIXER_BRENT_FALLBACK_USD,
     FIXER_FALLBACK_DISTANCE_NM,
     FIXER_WORST_CASE_LEAD_DAYS,
+    FIXER_WEIGHT_COST,
+    FIXER_WEIGHT_TIME,
+    FIXER_WEIGHT_RISK,
+    FIXER_WEIGHT_CONGESTION,
     VLCC_DAILY_CHARTER_USD,
     VLCC_CARGO_BARRELS,
     VLCC_SPEED_KNOTS,
@@ -80,13 +84,13 @@ _CHOKEPOINT_DETOUR: dict[str, dict] = {
 # Step 3 Helper: Freight Premium Calculation
 # ---------------------------------------------------------------------------
 
-def _compute_freight_premium(extra_detour_days: float) -> float:
+def _compute_freight_premium(voyage_days: float) -> float:
     """
-    Calculate freight cost premium per barrel from extra detour days.
+    Calculate freight cost per barrel from total voyage days.
 
-    Formula: (VLCC_DAILY_CHARTER × extra_detour_days) / VLCC_CARGO_BARRELS
+    Formula: (VLCC_DAILY_CHARTER × voyage_days) / VLCC_CARGO_BARRELS
     """
-    return round((VLCC_DAILY_CHARTER_USD * extra_detour_days) / VLCC_CARGO_BARRELS, 2)
+    return round((VLCC_DAILY_CHARTER_USD * voyage_days) / VLCC_CARGO_BARRELS, 2)
 
 
 # ---------------------------------------------------------------------------
@@ -168,21 +172,30 @@ def _composite_score(
     lead_time: float,
     risk_score: float,
     brent_price: float,
+    congestion_score: float = 0.5,
 ) -> float:
     """
     Compute a normalised composite procurement score (0–1, higher = better).
 
     Weights:
-      40% — landed cost (inverse, cheaper = better)
-      30% — lead time   (inverse, faster = better)
-      30% — route risk  (inverse, safer = better)
+      cost       (inverse, cheaper = better)
+      lead time  (inverse, faster = better)
+      route risk (inverse, safer = better)
+      congestion (inverse, less congested = better)
     """
     max_cost      = brent_price * 1.5 if brent_price > 0 else 120.0
     cost_score    = 1 - min(landed_cost / max_cost, 1)
     time_score    = 1 - min(lead_time / FIXER_WORST_CASE_LEAD_DAYS, 1)
     risk_score_n  = 1 - min(risk_score, 1)
+    congestion_factor = 1.0 - min(congestion_score, 1.0)
 
-    return round(cost_score * 0.40 + time_score * 0.30 + risk_score_n * 0.30, 3)
+    return round(
+        cost_score * FIXER_WEIGHT_COST +
+        time_score * FIXER_WEIGHT_TIME +
+        risk_score_n * FIXER_WEIGHT_RISK +
+        congestion_factor * FIXER_WEIGHT_CONGESTION,
+        3
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -264,13 +277,13 @@ def find_alternatives(
         country      = port.get("country", "Unknown")
         grade        = port.get("grade", crude_grade or "Mixed")
         port_transits = port.get("transit_chokepoints") or []
+        
+        # Missing or unmapped congestion data defaults to 0.5 (neutral)
+        raw_congestion = port.get("congestion_score")
+        congestion_score = float(raw_congestion) if raw_congestion is not None else 0.5
 
         # Step 3a — Conditional Detour Penalty
         extra_detour = get_conditional_detour(blocked_chokepoint, port_transits)
-
-        # Step 3b — Financial math
-        freight_prem = _compute_freight_premium(extra_detour_days=extra_detour)
-        landed_cost  = round(current_brent + freight_prem, 2)
 
         # Step 4 — Lead time (searoute marine distance port -> destination)
         port_lat = port.get("lat") or 0.0
@@ -284,6 +297,10 @@ def find_alternatives(
         else:
             # Fallback for ports without coordinates
             lead_time = round(FIXER_FALLBACK_DISTANCE_NM / NAUTICAL_MILES_PER_DAY + extra_detour, 1)
+
+        # Step 3b — Financial math (freight premium based on total lead time)
+        freight_prem = _compute_freight_premium(voyage_days=lead_time)
+        landed_cost  = round(current_brent + freight_prem, 2)
 
         # Dynamic risk score based on Intelligence pipeline
         # Baseline risk is 5%, augmented if the country appears in recent high-severity events
@@ -303,6 +320,7 @@ def find_alternatives(
             lead_time=lead_time,
             risk_score=risk_score,
             brent_price=current_brent,
+            congestion_score=congestion_score,
         )
 
         procurement_matrix.append({
@@ -314,6 +332,7 @@ def find_alternatives(
             "landed_cost_usd":    landed_cost,
             "lead_time_days":     lead_time,
             "risk_score":         risk_score,
+            "congestion_score":   congestion_score,
             "composite_score":    comp,
             "extra_detour_days":  extra_detour,
             "recommended":        False,

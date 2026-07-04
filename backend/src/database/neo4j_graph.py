@@ -396,6 +396,25 @@ def seed_graph() -> None:
 # Query Functions
 # ---------------------------------------------------------------------------
 
+def update_port_congestion(port_name: str, score: float) -> None:
+    """Update the current_congestion_score for an ExportPort."""
+    driver = get_driver()
+    if driver is None:
+        return
+    try:
+        with driver.session() as session:
+            session.run(
+                """
+                MATCH (p:ExportPort {name: $port_name})
+                SET p.current_congestion_score = $score
+                """,
+                port_name=port_name,
+                score=score
+            )
+    except Exception as exc:
+        logger.error("update_port_congestion failed: %s", exc)
+
+
 def get_refinery_coords(refinery_name: str) -> dict[str, float] | None:
     """
     Return lat/lon for a named refinery node.
@@ -504,7 +523,8 @@ def find_export_ports_bypassing(
                            g.name                  AS grade,
                            p.baseline_days_to_india AS baseline_days_to_india,
                            p.lat                   AS lat,
-                           p.lon                   AS lon
+                           p.lon                   AS lon,
+                           p.current_congestion_score AS congestion_score
                     ORDER BY p.baseline_days_to_india ASC
                     """,
                     blocked=blocked_chokepoint,
@@ -520,7 +540,8 @@ def find_export_ports_bypassing(
                            g.name                  AS grade,
                            p.baseline_days_to_india AS baseline_days_to_india,
                            p.lat                   AS lat,
-                           p.lon                   AS lon
+                           p.lon                   AS lon,
+                           p.current_congestion_score AS congestion_score
                     ORDER BY p.baseline_days_to_india ASC
                     LIMIT 10
                     """,

@@ -34,7 +34,7 @@ from src.utils.metrics import (
     compute_resilience_score,
     flow_weighted_risk,
 )
-from src.utils.constants import MODELER_BASELINE_RISK
+from src.utils.constants import MODELER_BASELINE_RISK, TANKER_SHIP_TYPES
 
 logger = logging.getLogger(__name__)
 
@@ -86,16 +86,17 @@ def compute_current_sdi() -> dict[str, Any]:
     top_region = top_event.get("region", "—")
     top_chokepoints = top_event.get("affected_chokepoints", []) or []
 
-    # ΔD_vessel — aggregate vessel count vs baselines
+    # ΔD_vessel — aggregate vessel count vs baselines (tankers only)
     vessels = fetch_vessels()
-    region_counts: dict[str, int] = {}
+    region_counts_tanker: dict[str, int] = {}
     for v in vessels:
         region = v.get("region", "Unknown")
-        region_counts[region] = region_counts.get(region, 0) + 1
+        if v.get("ship_type") in TANKER_SHIP_TYPES:
+            region_counts_tanker[region] = region_counts_tanker.get(region, 0) + 1
 
     delta_d_values = []
     for region, baseline in _VESSEL_BASELINES.items():
-        current = region_counts.get(region, 0)
+        current = region_counts_tanker.get(region, 0)
         delta_d_values.append(normalise_vessel_density_delta(current, baseline))
     delta_d = sum(delta_d_values) / len(delta_d_values) if delta_d_values else 0.0
 
@@ -145,6 +146,7 @@ def compute_current_sdi() -> dict[str, Any]:
         "top_region":       top_region,
         "top_chokepoints":  top_chokepoints,
         "vessel_count":     len(vessels),
+        "tanker_count":     sum(region_counts_tanker.values()),
         "active_alerts":    len([e for e in events if float(e.get("severity", 0)) > 0.5]),
     }
 
@@ -164,11 +166,12 @@ def compute_chokepoint_risk_matrix() -> list[dict[str, Any]]:
     events = fetch_risk_events(limit=20)
     vessels = fetch_vessels()
 
-    # Count vessels per region
-    region_counts: dict[str, int] = {}
+    # Count vessels per region (tankers only for SDI)
+    region_counts_tanker: dict[str, int] = {}
     for v in vessels:
         region = v.get("region", "Unknown")
-        region_counts[region] = region_counts.get(region, 0) + 1
+        if v.get("ship_type") in TANKER_SHIP_TYPES:
+            region_counts_tanker[region] = region_counts_tanker.get(region, 0) + 1
 
     # Map event severity to chokepoints
     chokepoint_risk: dict[str, float] = {}
@@ -182,7 +185,7 @@ def compute_chokepoint_risk_matrix() -> list[dict[str, Any]]:
     for cp_name, flow_mb in _CHOKEPOINT_FLOWS.items():
         risk = chokepoint_risk.get(cp_name, MODELER_BASELINE_RISK)
         baseline = _VESSEL_BASELINES.get(cp_name, 10)
-        current  = region_counts.get(cp_name, baseline)
+        current  = region_counts_tanker.get(cp_name, baseline)
         delta_d  = normalise_vessel_density_delta(current, baseline)
         sdi_contrib = supply_disruption_index(
             p_risk=risk,

@@ -109,6 +109,13 @@ def step_sentinel() -> None:
     logger.info("SENTINEL✓  %d risk event(s) written", n)
 
 
+def step_portwatch() -> None:
+    """Fetch daily port traffic from IMF PortWatch."""
+    from src.ingestion.portwatch_trawler import trawl_portwatch
+    trawl_portwatch()
+    logger.info("PORTWATCH✓  Congestion scores updated")
+
+
 # ---------------------------------------------------------------------------
 # Full Cycle
 # ---------------------------------------------------------------------------
@@ -185,8 +192,10 @@ def main() -> None:
 
     # Run immediately on startup so dashboard has data right away
     run_cycle()
+    step_portwatch()
 
     schedule.every(interval).minutes.do(run_cycle)
+    schedule.every(12).hours.do(step_portwatch)
 
     try:
         while True:

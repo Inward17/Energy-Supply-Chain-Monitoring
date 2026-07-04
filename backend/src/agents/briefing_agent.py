@@ -10,6 +10,7 @@ Gemini 2.5 Flash to generate a formal Emergency Action Plan.
 import os
 from google import genai
 from google.genai import types
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 def generate_emergency_brief(scenario_name, target_refinery, spr_data, reroute_df):
     """
@@ -19,6 +20,9 @@ def generate_emergency_brief(scenario_name, target_refinery, spr_data, reroute_d
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         return "⚠️ GEMINI_API_KEY not found. Cannot generate executive brief."
+
+    if "GOOGLE_API_KEY" in os.environ:
+        del os.environ["GOOGLE_API_KEY"]
 
     # Initialize the new Gemini 2.0 SDK client
     client = genai.Client(api_key=api_key)
@@ -60,8 +64,13 @@ def generate_emergency_brief(scenario_name, target_refinery, spr_data, reroute_d
     Use a professional, urgent, and highly analytical tone. Do not use markdown headers, just return the paragraphs.
     """
 
-    try:
-        # Using gemini-2.5-flash as the fast reasoning engine
+    @retry(
+        retry=retry_if_exception_type(Exception),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        stop=stop_after_attempt(3),
+        reraise=True,
+    )
+    def _generate():
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=prompt,
@@ -70,5 +79,8 @@ def generate_emergency_brief(scenario_name, target_refinery, spr_data, reroute_d
             )
         )
         return response.text
+
+    try:
+        return _generate()
     except Exception as e:
-        return f"⚠️ Error generating brief: {str(e)}"
+        return "⚠️ Executive brief temporarily unavailable — please retry."

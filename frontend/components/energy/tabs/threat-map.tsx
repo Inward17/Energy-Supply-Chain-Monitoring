@@ -63,6 +63,9 @@ export function ThreatMap() {
             {vessels.length} vessels live
           </div>
         </div>
+        <p className="mt-3 text-[10px] text-slate-500 italic">
+          * Note: Vessel positions (AIS) and geopolitical risk heatmaps are independent signals. A region may exhibit high geopolitical risk without active vessel tracking coverage.
+        </p>
       </div>
     </Panel>
   )

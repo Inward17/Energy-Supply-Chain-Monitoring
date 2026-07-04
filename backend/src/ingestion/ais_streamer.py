@@ -24,7 +24,11 @@ from typing import Any
 import websockets
 from dotenv import load_dotenv
 
-from src.database.postgres_db import upsert_vessel
+from src.database.postgres_db import (
+    upsert_vessel,
+    fetch_vessel_types,
+    upsert_vessel_types,
+)
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -79,6 +83,8 @@ async def _stream_snapshot(
     api_key: str,
     duration_seconds: int,
     buffer: list[dict[str, Any]],
+    ship_types_cache: dict[int, int],
+    new_ship_types: list[dict[str, Any]],
 ) -> None:
     """
     Open a WebSocket connection, collect vessel positions for `duration_seconds`,
@@ -134,6 +140,19 @@ async def _stream_snapshot(
                             "recorded_at": datetime.now(timezone.utc),
                         })
 
+                    elif mtype == "ShipStaticData":
+                        static = msg["Message"]["ShipStaticData"]
+                        mmsi = static.get("UserID")
+                        ship_type = static.get("Type")
+                        if mmsi and ship_type is not None:
+                            if ship_types_cache.get(mmsi) != ship_type:
+                                ship_types_cache[mmsi] = ship_type
+                                new_ship_types.append({
+                                    "mmsi": mmsi,
+                                    "ship_type": ship_type,
+                                    "first_seen": datetime.now(timezone.utc)
+                                })
+
                 except (KeyError, json.JSONDecodeError):
                     continue
 
@@ -166,19 +185,28 @@ def snapshot_vessels(duration_seconds: int | None = None) -> int:
 
     secs = duration_seconds or int(os.getenv("AIS_SNAPSHOT_SECONDS", "120"))
     buffer: list[dict[str, Any]] = []
+    ship_types_cache = fetch_vessel_types()
+    new_ship_types: list[dict[str, Any]] = []
 
     # Run async collection synchronously
     try:
-        asyncio.run(_stream_snapshot(api_key, secs, buffer))
+        asyncio.run(_stream_snapshot(api_key, secs, buffer, ship_types_cache, new_ship_types))
     except RuntimeError:
         # Already inside an event loop (e.g. Jupyter); use nest_asyncio or thread
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        loop.run_until_complete(_stream_snapshot(api_key, secs, buffer))
+        loop.run_until_complete(_stream_snapshot(api_key, secs, buffer, ship_types_cache, new_ship_types))
+
+    if new_ship_types:
+        upsert_vessel_types(new_ship_types)
 
     if not buffer:
         logger.info("AISStream: no vessel records collected in this snapshot.")
         return 0
+
+    # Enrich position reports with latest known ship types
+    for rec in buffer:
+        rec["ship_type"] = ship_types_cache.get(rec["mmsi"])
 
     stored = upsert_vessel(buffer)
     logger.info("ais_streamer: %d vessel records stored (%d collected).", stored, len(buffer))

@@ -131,8 +131,9 @@ def run_backtest():
             rolling_std=freight_stats["rolling_std"],
         )
         
-        # Approximate delta_d for historical backtest without real AIS history
-        delta_d = 0.2 if scored.get("severity", 0) > 0.7 else 0.05
+        # Historical AIS data unavailable pre-dating our ingestion start; 
+        # vessel density held neutral for backtest purposes
+        delta_d = 0.5
         
         sdi = supply_disruption_index(
             p_risk=float(scored.get("severity", 0.0)),

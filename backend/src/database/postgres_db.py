@@ -108,6 +108,14 @@ def init_schema() -> None:
             UNIQUE (mmsi, recorded_at)
         )
         """,
+        "ALTER TABLE vessel_telemetry ADD COLUMN IF NOT EXISTS ship_type INTEGER;",
+        """
+        CREATE TABLE IF NOT EXISTS vessel_type_registry (
+            mmsi        BIGINT PRIMARY KEY,
+            ship_type   INTEGER,
+            first_seen  TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
         """
         CREATE TABLE IF NOT EXISTS market_prices (
             id          SERIAL PRIMARY KEY,
@@ -247,9 +255,9 @@ def upsert_vessel(records: list[dict[str, Any]]) -> int:
     stmt = text(
         """
         INSERT INTO vessel_telemetry
-            (mmsi, vessel_name, lat, lon, speed, heading, region, recorded_at)
+            (mmsi, vessel_name, ship_type, lat, lon, speed, heading, region, recorded_at)
         VALUES
-            (:mmsi, :vessel_name, :lat, :lon, :speed, :heading, :region, :recorded_at)
+            (:mmsi, :vessel_name, :ship_type, :lat, :lon, :speed, :heading, :region, :recorded_at)
         ON CONFLICT (mmsi, recorded_at) DO NOTHING
         """
     )
@@ -262,6 +270,7 @@ def upsert_vessel(records: list[dict[str, Any]]) -> int:
                     {
                         "mmsi":        rec.get("mmsi"),
                         "vessel_name": rec.get("vessel_name", ""),
+                        "ship_type":   rec.get("ship_type"),
                         "lat":         rec.get("lat"),
                         "lon":         rec.get("lon"),
                         "speed":       rec.get("speed", 0),
@@ -283,7 +292,7 @@ def fetch_vessels(region: str | None = None, limit: int = 500) -> list[dict[str,
             if region:
                 rows = conn.execute(
                     text(
-                        "SELECT DISTINCT ON (mmsi) mmsi, vessel_name, lat, lon, "
+                        "SELECT DISTINCT ON (mmsi) mmsi, vessel_name, ship_type, lat, lon, "
                         "speed, heading, region, recorded_at "
                         "FROM vessel_telemetry WHERE region = :region "
                         "ORDER BY mmsi, recorded_at DESC LIMIT :lim"
@@ -293,7 +302,7 @@ def fetch_vessels(region: str | None = None, limit: int = 500) -> list[dict[str,
             else:
                 rows = conn.execute(
                     text(
-                        "SELECT DISTINCT ON (mmsi) mmsi, vessel_name, lat, lon, "
+                        "SELECT DISTINCT ON (mmsi) mmsi, vessel_name, ship_type, lat, lon, "
                         "speed, heading, region, recorded_at "
                         "FROM vessel_telemetry "
                         "ORDER BY mmsi, recorded_at DESC LIMIT :lim"
@@ -304,6 +313,39 @@ def fetch_vessels(region: str | None = None, limit: int = 500) -> list[dict[str,
     except Exception as exc:
         logger.error("fetch_vessels failed: %s", exc)
         return []
+
+
+def upsert_vessel_types(records: list[dict[str, Any]]) -> None:
+    """Insert or update ship types in the persistent registry."""
+    if not records:
+        return
+    stmt = text(
+        """
+        INSERT INTO vessel_type_registry (mmsi, ship_type, first_seen)
+        VALUES (:mmsi, :ship_type, :first_seen)
+        ON CONFLICT (mmsi) DO UPDATE SET
+            ship_type = EXCLUDED.ship_type
+        """
+    )
+    try:
+        with get_conn() as conn:
+            for rec in records:
+                conn.execute(stmt, rec)
+    except Exception as exc:
+        logger.error("upsert_vessel_types failed: %s", exc)
+
+
+def fetch_vessel_types() -> dict[int, int]:
+    """Fetch all known MMSI -> ship_type mappings."""
+    try:
+        with get_conn() as conn:
+            rows = conn.execute(
+                text("SELECT mmsi, ship_type FROM vessel_type_registry")
+            ).mappings().all()
+            return {r["mmsi"]: r["ship_type"] for r in rows if r["ship_type"] is not None}
+    except Exception as exc:
+        logger.error("fetch_vessel_types failed: %s", exc)
+        return {}
 
 
 # ---------------------------------------------------------------------------

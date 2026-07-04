@@ -476,7 +476,7 @@ Weights (`w1`, `w2`, `w3`) are overridable via `SDI_W1`, `SDI_W2`, `SDI_W3` envi
 
 | # | Tab | Description |
 |---|---|---|
-| 1 | 🌍 **Threat Map** | Interactive Deck.gl globe displaying live vessel positions and a chokepoint risk heatmap |
+| 1 | 🌍 **Threat Map** | Interactive Leaflet map displaying live vessel positions and a chokepoint risk heatmap |
 | 2 | 🔴 **Risk Intelligence** | Gemini-scored event feed with SDI timeline chart |
 | 3 | 📈 **Market Pulse** | Brent/NG/XLE candlestick charts + price impact KPI cards |
 | 4 | 🔀 **Reroute Matrix** | Interactive 5-step procurement analysis — select a blocked chokepoint and destination refinery to get a ranked table of alternative crude sources |

@@ -69,6 +69,9 @@ export function HistoricalValidation() {
             </div>
           </div>
         </div>
+        <p className="mb-4 text-xs italic text-slate-500">
+          * Note: Vessel density is a live-only signal (requires real-time AIS ingestion); this historical validation reflects the other three signal sources.
+        </p>
 
         {/* Dual Axis Chart */}
         <div className="h-[350px] w-full">

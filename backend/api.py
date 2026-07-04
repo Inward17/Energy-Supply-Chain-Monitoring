@@ -552,10 +552,9 @@ def get_backtest(event_name: str) -> dict[str, Any]:
                 if system_alert_date is None and sdi >= SDI_THRESHOLD:
                     system_alert_date = current
                     
-                # Market reaction first time after alert where price breaks +1.5 std
-                if system_alert_date is not None and market_reaction_date is None:
-                    if p_val > (mean_val + 1.5 * std_val) and current >= system_alert_date:
-                        market_reaction_date = current
+                # Market reaction first time price breaks +1.5 std (independent of alert)
+                if market_reaction_date is None and p_val > (mean_val + 1.5 * std_val):
+                    market_reaction_date = current
                         
             current += timedelta(days=1)
             
@@ -567,6 +566,8 @@ def get_backtest(event_name: str) -> dict[str, Any]:
                 verdict = f"System flagged elevated risk {lead_time_days} days before Brent crude moved >1.5σ above trend."
             elif lead_time_days == 0:
                 verdict = "System flagged risk contemporaneously with market reaction."
+            else:
+                verdict = f"System lagged the market: alert triggered {abs(lead_time_days)} days after price breakout."
                 
         return {
             "series": series,
