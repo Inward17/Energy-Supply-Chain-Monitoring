@@ -80,7 +80,7 @@ This platform is a **multi-agent AI command centre** that:
            │
            ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    STREAMLIT DASHBOARD (app.py)                     │
+│                 REACT / NEXT.JS DASHBOARD (UI)                      │
 │  Tab 1: Threat Map   Tab 2: Risk Intelligence   Tab 3: Market Pulse │
 │  Tab 4: Reroute Matrix   Tab 5: SPR Optimizer   Tab 6: War Room     │
 └─────────────────────────────────────────────────────────────────────┘
@@ -99,7 +99,8 @@ Every external API is hit **only in the background** (cron_worker.py). The Strea
 
 | Layer | Technology | Purpose |
 |---|---|---|
-| UI | Streamlit | Interactive dashboard |
+| UI | React (Next.js) | Interactive dashboard, rich data visualizations (Recharts, Tailwind) |
+| Backend API | FastAPI | REST bridge connecting the UI to the intelligence agents |
 | Intelligence | Google Gemini 2.5 Flash | News scoring, Executive Briefing |
 | Graph DB | Neo4j | Supply chain routing knowledge graph |
 | Relational DB | PostgreSQL | Time-series cache (news, prices, vessels) |
@@ -118,32 +119,22 @@ Every external API is hit **only in the background** (cron_worker.py). The Strea
 ```text
 energy-supply-chain/
 │
-├── app.py                          # Streamlit dashboard entry point (6 tabs)
-├── cron_worker.py                  # Background pipeline scheduler (Shadow Cache heartbeat)
-├── requirements.txt                # Python dependencies
-├── .env                            # All secrets and tuning knobs (never committed)
+├── backend/                        # Python API and AI Agents
+│   ├── api.py                      # FastAPI bridge to the UI
+│   ├── cron_worker.py              # Background pipeline scheduler (Shadow Cache heartbeat)
+│   ├── requirements.txt            # Python dependencies
+│   ├── .env                        # All backend secrets and tuning knobs (never committed)
+│   └── src/
+│       ├── agents/                 # Logic agents (fixer, modeler, sentinel, spr, briefing)
+│       ├── database/               # PostgreSQL & Neo4j driver layer
+│       ├── ingestion/              # Data trawlers (GDELT, AIS, yfinance)
+│       └── utils/                  # Domain constants and math metrics
 │
-└── src/
-    ├── agents/
-    │   ├── briefing_agent.py       # Gemini: generates Executive Emergency Action Plan
-    │   ├── fixer_agent.py          # Adaptive Procurement Orchestrator (5-step rerouting)
-    │   ├── modeler_agent.py        # Deterministic SDI math engine
-    │   ├── sentinel_agent.py       # Gemini: geopolitical risk scoring from news
-    │   └── spr_agent.py            # SPR burn-down + macro-economic impact modeller
-    │
-    ├── database/
-    │   ├── neo4j_graph.py          # Neo4j driver, seed data, Cypher query interface
-    │   └── postgres_db.py          # PostgreSQL connection pool, schema, CRUD operations
-    │
-    ├── ingestion/
-    │   ├── ais_streamer.py         # AIS WebSocket collector (vessel positions)
-    │   ├── gdelt_collector.py      # GDELT API news fetcher
-    │   └── market_trawler.py       # yfinance price fetcher (Brent, NG, USO, XLE)
-    │
-    └── utils/
-        ├── constants.py            # Single source of truth for all domain constants
-        ├── metrics.py              # Pure math: SDI formula, price impact, resilience score
-        └── formatting.py           # Display helpers for the dashboard
+└── frontend/                       # React/Next.js User Interface
+    ├── components/                 # Reusable UI widgets and tabs
+    ├── lib/                        # API fetcher utility (api.ts)
+    ├── app/                        # Next.js pages and routing
+    └── package.json                # Node dependencies
 ```
 
 ---
@@ -159,7 +150,8 @@ GDELT API ──────────────► gdelt_collector.py ─�
 AISStream.io WebSocket ──► ais_streamer.py ──────► vessel_telemetry (Postgres)
                            (120s snapshot per cycle)
 
-Yahoo Finance API ────────► market_trawler.py ───► price_history (Postgres)
+Yahoo Finance API ────────► market_trawler.py & ───► price_history (Postgres)
+                           freight_trawler.py 
                            (60-day OHLCV history)
 ```
 
@@ -207,14 +199,11 @@ briefing_agent.py (War Room only):
 
 ---
 
-#### `app.py` — Streamlit Dashboard
-The front-end and orchestration controller. All 6 tabs are defined here.
+#### `api.py` — FastAPI Bridge
+The serving layer. Exposes all Python agent logic (fixer, spr, sentinel, briefing) as REST endpoints that the React frontend calls via `fetch()`.
 
-- Uses `@st.cache_data` to cache Neo4j chokepoint/refinery lists between reruns
-- Calls agents directly (fixer_agent, spr_agent, briefing_agent) when the user clicks a button
 - **Never** makes external network requests directly — all data comes from Postgres/Neo4j
-- Injects custom CSS for glassmorphism dark-mode styling
-- Registers a `streamlit-autorefresh` component for live data updates
+- Provides cleanly-typed JSON responses via Pydantic schemas (e.g. `RerouteRequest`, `WarRoomRequest`)
 
 ---
 
@@ -536,32 +525,34 @@ External APIs are queried **only in the cron_worker.py background process**, whi
 git clone <repo-url>
 cd energy-supply-chain
 
-# Create and activate virtual environment
+# 1. Setup Backend
+cd backend
 python -m venv venv
 .\venv\Scripts\Activate.ps1  # Windows
-
-# Install dependencies
 pip install -r requirements.txt
-
-# Configure environment variables
 copy .env.example .env
 # Edit .env with your credentials
+
+# 2. Setup Frontend
+cd ../frontend
+npm install
 ```
 
 ### First Run
 
 ```bash
-# Terminal 1: Initialise databases and run first ingestion cycle
+# Terminal 1: Initialise databases and background cron loop
+cd backend
 python cron_worker.py --once
-
-# (Optional) Backfill 24h of news for richer intelligence data
-python cron_worker.py --backfill
-
-# Terminal 1: Start the background cron loop
 python cron_worker.py
 
-# Terminal 2: Start the dashboard
-streamlit run app.py
+# Terminal 2: Start the FastAPI API Bridge
+cd backend
+uvicorn api:app --reload --port 8000
+
+# Terminal 3: Start the React frontend
+cd frontend
+npm run dev
 ```
 
 ---
@@ -593,7 +584,8 @@ AIS_SNAPSHOT_SECONDS=120       # How long to collect AIS data per cycle
 GEMINI_MODEL=gemini-2.5-flash  # Swap model without code changes
 
 # ── SDI Weights (must sum to 1.0) ─────────────────────
-SDI_W1=0.50   # Geopolitical risk score weight
-SDI_W2=0.30   # Vessel density divergence weight
-SDI_W3=0.20   # Price delta weight
+SDI_W1=0.40   # Geopolitical risk score weight
+SDI_W2=0.25   # Vessel density divergence weight
+SDI_W3=0.15   # Price delta weight
+SDI_W4=0.20   # Freight/Insurance stress weight
 ```

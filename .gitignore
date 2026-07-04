@@ -122,3 +122,16 @@ Active.ps1
 *.sqlite
 *.db
 *.lock
+
+# Node / Next.js (frontend)
+node_modules/
+.next/
+out/
+frontend/.env.local
+frontend/.env.*.local
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
+# pnpm lock (large; regenerated on install)
+pnpm-lock.yaml
