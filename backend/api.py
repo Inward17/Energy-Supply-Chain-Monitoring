@@ -24,7 +24,7 @@ from datetime import datetime, timedelta, date
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from src.utils.schemas import RerouteRequest, SprRequest, WarRoomRequest
+from src.utils.schemas import RerouteRequest, SprRequest, WarRoomRequest, BacktestRequest
 
 # ── Agent imports (untouched business logic) ────────────────────────────────
 from src.agents.fixer_agent import (
@@ -37,13 +37,19 @@ from src.agents.spr_agent import calculate_spr_impact
 from src.agents.briefing_agent import generate_emergency_brief
 from src.agents.modeler_agent import compute_current_sdi, compute_chokepoint_risk_matrix
 from src.database.postgres_db import (
+    init_schema,
     fetch_unprocessed_news,
     fetch_vessels,
     fetch_latest_prices,
     fetch_risk_events,
     fetch_latest_sdi,
-    fetch_risk_events_backtest
+    fetch_risk_events_backtest,
+    create_backtest_job,
+    fetch_all_backtest_jobs
 )
+
+from dotenv import load_dotenv
+load_dotenv(override=True)
 from src.ingestion.market_trawler import get_brent_rolling_stats
 
 logging.basicConfig(level=logging.INFO)
@@ -71,12 +77,19 @@ app.add_middleware(
 
 @app.on_event("startup")
 def startup():
-    """Ensure Postgres schema exists before the first request arrives."""
+    """Ensure Postgres schema and Neo4j knowledge graph exist before the first request."""
     try:
         init_schema()
         logger.info("Database schema verified on startup.")
     except Exception as exc:
         logger.warning("Could not verify DB schema on startup: %s", exc)
+
+    try:
+        from src.database.neo4j_graph import seed_graph
+        seed_graph()
+        logger.info("Neo4j knowledge graph verified on startup.")
+    except Exception as exc:
+        logger.warning("Neo4j seed on startup failed (non-fatal): %s", exc)
 
 
 # ── Endpoints: Metrics & Live Data ────────────────────────────────────────────
@@ -104,7 +117,12 @@ def get_live_metrics() -> dict[str, Any]:
             "top_chokepoints":  sdi_data["top_chokepoints"],
             "vessel_count":     sdi_data["vessel_count"],
             "active_alerts":    sdi_data["active_alerts"],
+            "gemini_configured": sdi_data.get("gemini_configured", True),
+            "ais_configured":    sdi_data.get("ais_configured", True),
         }
+    except ValueError as exc:
+        logger.warning("get_live_metrics degraded: %s", exc)
+        return {"status": "degraded", "error": str(exc)}
     except Exception as exc:
         logger.error("get_live_metrics failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
@@ -165,6 +183,9 @@ def get_chokepoint_matrix() -> list[dict[str, Any]]:
     """
     try:
         return compute_chokepoint_risk_matrix()
+    except ValueError as exc:
+        logger.warning("get_chokepoint_matrix degraded: %s", exc)
+        return [{"status": "degraded", "error": str(exc)}]
     except Exception as exc:
         logger.error("get_chokepoint_matrix failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
@@ -491,9 +512,9 @@ def get_backtest(event_name: str) -> dict[str, Any]:
             price_df.sort_values("date", inplace=True)
             price_df.set_index("date", inplace=True)
             
-            # Calculate 30-day rolling mean and std
-            price_df["mean_30d"] = price_df["price"].rolling(30).mean()
-            price_df["std_30d"] = price_df["price"].rolling(30).std()
+            # Calculate 14-day rolling mean and std to detect short-term breakouts
+            price_df["mean_14d"] = price_df["price"].rolling(14).mean()
+            price_df["std_14d"] = price_df["price"].rolling(14).std()
         
         # Build timeline mapping from SDI events (max SDI per day)
         timeline_dict = {}
@@ -536,8 +557,8 @@ def get_backtest(event_name: str) -> dict[str, Any]:
                     
                 if row is not None:
                     p_val = float(row["price"])
-                    mean_val = float(row["mean_30d"]) if pd.notna(row["mean_30d"]) else p_val
-                    std_val = float(row["std_30d"]) if pd.notna(row["std_30d"]) else 0.0
+                    mean_val = float(row["mean_14d"]) if pd.notna(row["mean_14d"]) else p_val
+                    std_val = float(row["std_14d"]) if pd.notna(row["std_14d"]) else 0.0
                     
             if p_val is not None:
                 series.append({
@@ -576,6 +597,32 @@ def get_backtest(event_name: str) -> dict[str, Any]:
             "lead_time_days": lead_time_days,
             "verdict": verdict
         }
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error("get_backtest failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/backtest/trigger")
+def trigger_backtest(req: BacktestRequest) -> dict[str, Any]:
+    """Queue a new backtest job for the cron_worker to process."""
+    try:
+        job_id = create_backtest_job(req.event_name)
+        if not job_id:
+            raise HTTPException(status_code=500, detail="Failed to create backtest job.")
+        return {"job_id": job_id, "status": "pending"}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("trigger_backtest failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+@app.get("/api/backtest/jobs")
+def get_backtest_jobs() -> list[dict[str, Any]]:
+    """Return all backtest jobs (pending, running, completed, failed)."""
+    try:
+        return fetch_all_backtest_jobs()
+    except Exception as exc:
+        logger.error("get_backtest_jobs failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))

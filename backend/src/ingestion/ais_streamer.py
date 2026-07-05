@@ -180,7 +180,8 @@ def snapshot_vessels(duration_seconds: int | None = None) -> int:
     """
     api_key = os.getenv("AISSTREAM_API_KEY", "")
     if not api_key:
-        logger.warning("AISSTREAM_API_KEY not set — skipping AIS collection.")
+        logger.warning("ais_streamer: AISSTREAM_API_KEY not configured — skipping AIS snapshot. "
+                       "Threat Map will show last-known seed data positions.")
         return 0
 
     secs = duration_seconds or int(os.getenv("AIS_SNAPSHOT_SECONDS", "120"))

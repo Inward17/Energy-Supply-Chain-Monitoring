@@ -22,6 +22,8 @@ Built for India's national energy security challenge: detecting geopolitical dis
 7. [Dashboard Tabs](#dashboard-tabs)
 8. [The Shadow Cache Architecture](#the-shadow-cache-architecture)
 9. [Setup & Running](#setup--running)
+   - [Option A — Docker (Recommended)](#option-a--docker-recommended)
+   - [Option B — Manual Setup](#option-b--manual-database-setup-without-docker)
 10. [Environment Variables](#environment-variables)
 
 ---
@@ -63,7 +65,7 @@ This platform is a **multi-agent AI command centre** that:
 │  ├── news_cache                           ├── Chokepoint nodes      │
 │  ├── risk_events                          ├── ExportPort nodes      │
 │  ├── vessel_telemetry                     ├── Refinery nodes        │
-│  └── price_history                        ├── CrudeGrade nodes      │
+│  └── market_prices                        ├── CrudeGrade nodes      │
 │                                           └── SHIPS_THROUGH edges   │
 └──────────┬────────────────────────────────────┬────────────────────┘
            │                                    │
@@ -468,7 +470,7 @@ Stateless, no-I/O functions for risk quantification.
 | `compute_resilience_score()` | Resilience index for a set of rerouted alternatives |
 | `flow_weighted_risk()` | Flow-weighted aggregate risk across multiple chokepoints |
 
-Weights (`w1`, `w2`, `w3`) are overridable via `SDI_W1`, `SDI_W2`, `SDI_W3` environment variables.
+Weights (`w1`, `w2`, `w3`, `w4`) are overridable via `SDI_W1`–`SDI_W4` environment variables (must sum to 1.0).
 
 ---
 
@@ -513,80 +515,165 @@ External APIs are queried **only in the cron_worker.py background process**, whi
 ## Setup & Running
 
 ### Prerequisites
-- Python 3.11+
-- PostgreSQL 14+ (running locally)
-- Neo4j Community Edition 5.x (running locally)
-- AISStream.io account (free tier works)
-- Google Gemini API key (free tier available)
 
-### Installation
+| Requirement | Version | Notes |
+|---|---|---|
+| Python | **3.11+** | Tested on 3.11 and 3.12 |
+| Node.js | **18.17+** | Required by Next.js 14 |
+| Docker + Docker Compose | **27+** | Recommended path — installs both databases for you |
+| PostgreSQL | 14+ | Only needed if not using Docker |
+| Neo4j Community | 5.x | Only needed if not using Docker |
+
+---
+
+### Option A — Docker (Recommended)
+
+This is the fastest and most reliable path. Docker starts both databases, creates the schema, and loads all historical seed data automatically. No manual database setup required.
+
+**Step 1 — Clone and configure credentials**
 
 ```bash
-# Clone the repository
 git clone <repo-url>
 cd energy-supply-chain
 
-# 1. Setup Backend
+# The .env file MUST exist before running docker-compose — Postgres reads
+# POSTGRES_PASSWORD and NEO4J_PASSWORD from it at container creation time.
 cd backend
-python -m venv venv
-.\venv\Scripts\Activate.ps1  # Windows
-pip install -r requirements.txt
-copy .env.example .env
-# Edit .env with your credentials
-
-# 2. Setup Frontend
-cd ../frontend
-npm install
+copy .env.example .env        # Windows
+# cp .env.example .env         # Mac/Linux
 ```
 
-### First Run
+Open `backend/.env` and fill in at minimum:
+- `DB_PASSWORD` — any password (must match what your app uses to connect)
+- `NEO4J_PASSWORD` — any password
+- `GEMINI_API_KEY` — free at https://aistudio.google.com/app/apikey (no credit card)
+- `AISSTREAM_API_KEY` — free at https://aisstream.io
 
 ```bash
-# Terminal 1: Initialise databases and background cron loop
-cd backend
-python cron_worker.py --once
-python cron_worker.py
+cd ..   # back to repo root
+```
 
-# Terminal 2: Start the FastAPI API Bridge
+**Step 2 — Start both databases**
+
+```bash
+# From repo root (where docker-compose.yml lives)
+docker-compose up -d
+
+# Wait for both containers to be healthy (~15–30 seconds)
+docker-compose ps
+# postgres: healthy   neo4j: healthy
+```
+
+Postgres automatically runs `seed/schema.sql` then `seed/postgres_dump.sql` on first boot, loading all historical event data, backtest records, and market prices. **You do not need to run a separate restore script.**
+
+> **What about Neo4j?** The Neo4j knowledge graph (chokepoints, export ports, refineries, crude grades and their relationships) is seeded by the Python application, not by Docker. It runs automatically the first time `uvicorn api:app` starts — before the first HTTP request arrives. If Neo4j is not yet seeded, the Reroute Matrix will return empty results; starting the backend fixes this immediately with no manual action.
+
+**Step 3 — Install Python and Node dependencies**
+
+```bash
+# Backend
+cd backend
+python -m venv venv
+.\venv\Scripts\Activate.ps1   # Windows
+# source venv/bin/activate      # Mac/Linux
+pip install -r requirements.txt
+cd ..
+
+# Frontend
+cd frontend
+npm install
+cd ..
+```
+
+**Step 4 — Start the application (3 terminals)**
+
+```bash
+# Terminal 1 — FastAPI backend (also seeds Neo4j knowledge graph on first boot)
 cd backend
 uvicorn api:app --reload --port 8000
 
-# Terminal 3: Start the React frontend
+# Terminal 2 — Background cron worker (keeps data fresh every 60 min)
+cd backend
+python cron_worker.py
+
+# Terminal 3 — React frontend
 cd frontend
 npm run dev
 ```
+
+Open http://localhost:3000 — the dashboard should show populated charts immediately.
+
+---
+
+### Option B — Manual Database Setup (without Docker)
+
+Use this path if you prefer to manage Postgres and Neo4j yourself.
+
+**Postgres:**
+
+```bash
+# Create the database
+psql -U postgres -c "CREATE DATABASE energy_resilience;"
+
+# Restore schema and seed data (required — without this, dashboard is empty for hours)
+# Windows:
+.\scripts\restore_seed_data.ps1
+# Mac/Linux:
+bash scripts/restore_seed_data.sh
+```
+
+**Neo4j:**
+
+1. Install Neo4j Community 5.x and start it
+2. Open http://localhost:7474 in your browser
+3. Log in with `neo4j` / `neo4j` (default credentials on first boot)
+4. You will be prompted to set a new password — **use the same value as `NEO4J_PASSWORD` in `backend/.env`**
+5. The knowledge graph seeds automatically when `uvicorn api:app` starts (no manual import step)
+
+**Install and start:**
+
+Follow Steps 1, 3, and 4 from Option A above (skip Step 2).
+
+> **Important:** Without the seed restore step, the dashboard will appear empty — 0 risk events, no backtest charts, flat market data — until the background cron worker accumulates enough live data, which can take several hours. Always run the restore script.
 
 ---
 
 ## Environment Variables
 
-All configuration is stored in `.env`. No credentials are hardcoded.
+All configuration lives in `backend/.env`. Copy `backend/.env.example` to `backend/.env` and fill in your values.
 
-```env
-# ── Database ───────────────────────────────────────────
+```bash
+# ── PostgreSQL ────────────────────────────────────────────────────────────
 DB_HOST=localhost
 DB_PORT=5432
-DB_USER=postgres
-DB_PASSWORD=your_password
 DB_NAME=energy_resilience
+DB_USER=postgres
+DB_PASSWORD=your_password        # Required — dashboard won't start without this
 
-# ── Neo4j ──────────────────────────────────────────────
+# ── Neo4j ─────────────────────────────────────────────────────────────────
 NEO4J_URI=neo4j://localhost:7687
 NEO4J_USER=neo4j
-NEO4J_PASSWORD=your_password
+NEO4J_PASSWORD=your_password     # Required — Reroute Matrix won't work without this
 
-# ── External APIs ──────────────────────────────────────
+# ── Gemini AI ──────────────────────────────────────────────────────────────
+# Get free key instantly: https://aistudio.google.com/app/apikey (no credit card)
+# Without this: Sentinel Agent disabled, War Room briefings show placeholder.
+#               All historical data, charts, and deterministic models still work.
 GEMINI_API_KEY=your_gemini_api_key
+
+# ── AISStream.io ───────────────────────────────────────────────────────────
+# Get free key instantly: https://aisstream.io
+# Without this: Threat Map shows last-known vessel positions from seed data.
 AISSTREAM_API_KEY=your_aisstream_key
 
-# ── Tuning Knobs (optional) ────────────────────────────
-CRON_INTERVAL_MINUTES=60       # How often the shadow cache refreshes
-AIS_SNAPSHOT_SECONDS=120       # How long to collect AIS data per cycle
-GEMINI_MODEL=gemini-2.5-flash  # Swap model without code changes
+# ── SDI Formula Weights (must sum exactly to 1.0) ─────────────────────────
+SDI_W1=0.40    # Gemini geopolitical risk score
+SDI_W2=0.25    # Vessel density anomaly (AIS)
+SDI_W3=0.15    # Brent crude price deviation
+SDI_W4=0.20    # Freight cost deviation (BOAT ETF)
 
-# ── SDI Weights (must sum to 1.0) ─────────────────────
-SDI_W1=0.40   # Geopolitical risk score weight
-SDI_W2=0.25   # Vessel density divergence weight
-SDI_W3=0.15   # Price delta weight
-SDI_W4=0.20   # Freight/Insurance stress weight
+# ── Cron Worker ────────────────────────────────────────────────────────────
+CRON_INTERVAL_MINUTES=60     # Background refresh interval
+AIS_SNAPSHOT_SECONDS=120     # How long to collect AIS data per cron cycle
 ```
+

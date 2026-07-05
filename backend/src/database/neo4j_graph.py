@@ -31,8 +31,7 @@ from typing import Any
 from neo4j import GraphDatabase, Driver
 from neo4j.exceptions import ServiceUnavailable
 from dotenv import load_dotenv
-
-load_dotenv()
+load_dotenv(override=True)
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------

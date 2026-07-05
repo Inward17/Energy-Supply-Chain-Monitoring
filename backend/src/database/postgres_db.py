@@ -21,8 +21,7 @@ from typing import Any, Generator
 from sqlalchemy import create_engine, text, Engine
 from sqlalchemy.pool import QueuePool
 from dotenv import load_dotenv
-
-load_dotenv()
+load_dotenv(override=True)
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -154,6 +153,17 @@ def init_schema() -> None:
             summary              TEXT,
             sdi_score            DOUBLE PRECISION,
             created_at           TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS backtest_jobs (
+            id          SERIAL PRIMARY KEY,
+            event_name  TEXT NOT NULL,
+            status      TEXT DEFAULT 'pending',
+            start_time  TIMESTAMPTZ,
+            end_time    TIMESTAMPTZ,
+            created_at  TIMESTAMPTZ DEFAULT NOW(),
+            error_log   TEXT
         )
         """,
         "CREATE INDEX IF NOT EXISTS idx_news_processed ON news_cache (processed, fetched_at DESC)",
@@ -295,6 +305,7 @@ def fetch_vessels(region: str | None = None, limit: int = 500) -> list[dict[str,
                         "SELECT DISTINCT ON (mmsi) mmsi, vessel_name, ship_type, lat, lon, "
                         "speed, heading, region, recorded_at "
                         "FROM vessel_telemetry WHERE region = :region "
+                        "AND recorded_at >= NOW() - INTERVAL '24 hours' "
                         "ORDER BY mmsi, recorded_at DESC LIMIT :lim"
                     ),
                     {"region": region, "lim": limit},
@@ -305,6 +316,7 @@ def fetch_vessels(region: str | None = None, limit: int = 500) -> list[dict[str,
                         "SELECT DISTINCT ON (mmsi) mmsi, vessel_name, ship_type, lat, lon, "
                         "speed, heading, region, recorded_at "
                         "FROM vessel_telemetry "
+                        "WHERE recorded_at >= NOW() - INTERVAL '24 hours' "
                         "ORDER BY mmsi, recorded_at DESC LIMIT :lim"
                     ),
                     {"lim": limit},
@@ -528,4 +540,68 @@ def fetch_risk_events_backtest(event_name: str) -> list[dict[str, Any]]:
             return [dict(r) for r in rows]
     except Exception as exc:
         logger.error("fetch_risk_events_backtest failed: %s", exc)
+        return []
+
+
+# ---------------------------------------------------------------------------
+# backtest_jobs
+# ---------------------------------------------------------------------------
+
+def create_backtest_job(event_name: str) -> int | None:
+    """Create a new backtest job and return its ID."""
+    try:
+        with get_conn() as conn:
+            result = conn.execute(
+                text("INSERT INTO backtest_jobs (event_name, status) VALUES (:event_name, 'pending') RETURNING id"),
+                {"event_name": event_name}
+            )
+            return result.scalar()
+    except Exception as exc:
+        logger.error("create_backtest_job failed: %s", exc)
+        return None
+
+def update_backtest_job(job_id: int, status: str, error_log: str | None = None) -> None:
+    """Update status (and optionally error_log/timestamps) for a backtest job."""
+    try:
+        with get_conn() as conn:
+            if status == 'running':
+                conn.execute(
+                    text("UPDATE backtest_jobs SET status = :status, start_time = NOW() WHERE id = :id"),
+                    {"status": status, "id": job_id}
+                )
+            elif status in ('completed', 'failed'):
+                conn.execute(
+                    text("UPDATE backtest_jobs SET status = :status, end_time = NOW(), error_log = :error_log WHERE id = :id"),
+                    {"status": status, "error_log": error_log, "id": job_id}
+                )
+            else:
+                conn.execute(
+                    text("UPDATE backtest_jobs SET status = :status WHERE id = :id"),
+                    {"status": status, "id": job_id}
+                )
+    except Exception as exc:
+        logger.error("update_backtest_job failed: %s", exc)
+
+def fetch_pending_backtest_jobs() -> list[dict[str, Any]]:
+    """Fetch all pending backtest jobs."""
+    try:
+        with get_conn() as conn:
+            rows = conn.execute(
+                text("SELECT id, event_name, status, start_time, end_time, created_at, error_log FROM backtest_jobs WHERE status = 'pending' ORDER BY created_at ASC")
+            ).mappings().all()
+            return [dict(r) for r in rows]
+    except Exception as exc:
+        logger.error("fetch_pending_backtest_jobs failed: %s", exc)
+        return []
+
+def fetch_all_backtest_jobs() -> list[dict[str, Any]]:
+    """Fetch all backtest jobs."""
+    try:
+        with get_conn() as conn:
+            rows = conn.execute(
+                text("SELECT id, event_name, status, start_time, end_time, created_at, error_log FROM backtest_jobs ORDER BY created_at DESC LIMIT 50")
+            ).mappings().all()
+            return [dict(r) for r in rows]
+    except Exception as exc:
+        logger.error("fetch_all_backtest_jobs failed: %s", exc)
         return []

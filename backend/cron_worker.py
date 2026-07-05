@@ -30,8 +30,7 @@ from pathlib import Path
 
 import schedule
 from dotenv import load_dotenv
-
-load_dotenv()
+load_dotenv(override=True)
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -116,6 +115,19 @@ def step_portwatch() -> None:
     logger.info("PORTWATCH✓  Congestion scores updated")
 
 
+def step_backtests() -> None:
+    """Process any pending backtest jobs from the queue."""
+    from src.database.postgres_db import fetch_pending_backtest_jobs
+    from run_backtest import run_backtest
+    
+    jobs = fetch_pending_backtest_jobs()
+    for job in jobs:
+        logger.info(f"BACKTEST✓  Starting job {job['id']} for {job['event_name']}")
+        try:
+            run_backtest(job["id"], job["event_name"])
+        except Exception as exc:
+            logger.error(f"BACKTEST✗  Job {job['id']} failed: {exc}")
+
 # ---------------------------------------------------------------------------
 # Full Cycle
 # ---------------------------------------------------------------------------
@@ -136,6 +148,7 @@ def run_cycle() -> None:
         ("GDELT Collector", step_gdelt),
         ("AIS Streamer",    step_ais),
         ("Sentinel Agent",  step_sentinel),
+        ("Backtest Runner", step_backtests),
     ]
 
     for name, fn in steps:

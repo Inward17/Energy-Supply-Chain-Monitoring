@@ -24,3 +24,6 @@ class WarRoomRequest(BaseModel):
     run_rate_cut: float = Field(0.15, ge=0.0, le=0.5)
     industrial_cut: float = Field(0.08, ge=0.0, le=0.5)
     transport_cut: float = Field(0.10, ge=0.0, le=0.5)
+
+class BacktestRequest(BaseModel):
+    event_name: str

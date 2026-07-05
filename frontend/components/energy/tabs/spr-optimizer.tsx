@@ -227,7 +227,7 @@ export function SprOptimizer() {
                           x={Math.round(leadTime)}
                           stroke="#f43f5e"
                           strokeDasharray="4 4"
-                          label={{ value: "Ships Arrive", fill: "#f43f5e", fontSize: 11, position: "top" }}
+                          label={{ value: "Ships Arrive", fill: "#f43f5e", fontSize: 11, position: "insideTopLeft", offset: 10 }}
                         />
                         <Line type="monotone" dataKey="baseline" name="Baseline"      stroke="#f43f5e" strokeWidth={2} dot={false} isAnimationActive={false} />
                         <Line type="monotone" dataKey="managed"  name="With Demand Mgmt" stroke="#34d399" strokeWidth={2} dot={false} isAnimationActive={false} />

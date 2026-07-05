@@ -34,6 +34,7 @@ from tenacity import (
 )
 from dotenv import load_dotenv
 
+load_dotenv(override=True)
 from src.database.postgres_db import (
     fetch_unprocessed_news,
     mark_news_processed,
@@ -41,10 +42,12 @@ from src.database.postgres_db import (
     fetch_latest_prices,
 )
 from src.ingestion.market_trawler import get_brent_rolling_stats
+from src.ingestion.freight_trawler import get_freight_rolling_stats
 from src.utils.metrics import (
     supply_disruption_index,
     normalise_price_delta,
     normalise_vessel_density_delta,
+    normalise_freight_delta,
 )
 
 load_dotenv()
@@ -198,6 +201,11 @@ def process_unprocessed_batch(batch_size: int = 5) -> int:
     Returns:
         Number of risk events written to Postgres.
     """
+    if not os.getenv("GEMINI_API_KEY", ""):
+        logger.warning("sentinel_agent: GEMINI_API_KEY not configured — skipping. "
+                       "Risk scoring disabled until key is set.")
+        return 0
+
     rows = fetch_unprocessed_news(limit=batch_size)
     if not rows:
         logger.info("sentinel_agent: no unprocessed news to score.")
@@ -221,11 +229,9 @@ def process_unprocessed_batch(batch_size: int = 5) -> int:
     if scored is None:
         return 0
 
-    # Filter out non-events (Gemini returns severity 0.1 and unknown when no disruption is found)
+    # Allow non-events through so the risk baseline decays properly.
     if scored.get("disruption_type", "").lower() == "unknown" or scored.get("severity", 1.0) <= 0.1:
-        logger.info("sentinel_agent: No disruption signal detected. Filtering out.")
-        mark_news_processed(news_ids)
-        return 0
+        logger.info("sentinel_agent: No disruption signal detected. Inserting baseline event to allow SDI decay.")
 
     # Enrich SDI score using market data
     brent_stats = get_brent_rolling_stats()
@@ -233,6 +239,13 @@ def process_unprocessed_batch(batch_size: int = 5) -> int:
         current_price=brent_stats["current_price"],
         rolling_mean=brent_stats["rolling_mean"],
         rolling_std=brent_stats["rolling_std"],
+    )
+
+    freight_stats = get_freight_rolling_stats()
+    delta_p_freight = normalise_freight_delta(
+        current_freight=freight_stats["current_price"],
+        rolling_mean=freight_stats["rolling_mean"],
+        rolling_std=freight_stats["rolling_std"],
     )
 
     # vessel density divergence — approximated when live AIS baseline is unavailable
@@ -246,6 +259,7 @@ def process_unprocessed_batch(batch_size: int = 5) -> int:
         p_risk=float(scored.get("severity", 0.0)),
         delta_d_vessel=delta_d,
         delta_p_price=delta_p,
+        delta_p_freight=delta_p_freight,
     )
 
     event = {**scored, "sdi_score": sdi}

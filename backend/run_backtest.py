@@ -12,18 +12,16 @@ from src.ingestion.gdelt_collector import fetch_historical
 from src.ingestion.market_trawler import fetch_historical_prices
 from src.agents.sentinel_agent import _build_prompt, _call_gemini
 from src.agents.modeler_agent import normalise_price_delta, normalise_freight_delta, supply_disruption_index
-from src.database.postgres_db import upsert_risk_event_backtest
+from src.database.postgres_db import upsert_risk_event_backtest, update_backtest_job
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-EVENT_NAME = "red_sea_attacks"
-START_DATE_STR = "2023-11-15"
-END_DATE_STR = "2024-01-31"
-
-def run_backtest():
-    start_date = datetime.strptime(START_DATE_STR, "%Y-%m-%d").date()
-    end_date = datetime.strptime(END_DATE_STR, "%Y-%m-%d").date()
+def run_backtest(job_id: int, event_name: str, start_date_str: str = "2023-11-15", end_date_str: str = "2024-01-31"):
+    try:
+        update_backtest_job(job_id, "running")
+        start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
+        end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
     
     # We need a 30-day buffer for rolling stats
     buffer_start = start_date - timedelta(days=45) 
@@ -54,7 +52,7 @@ def run_backtest():
     # Pre-fetch existing events to skip them
     from src.database.postgres_db import fetch_risk_events_backtest
     import time
-    existing_events = fetch_risk_events_backtest(EVENT_NAME)
+    existing_events = fetch_risk_events_backtest(event_name)
     existing_dates = {ev["created_at"].date() for ev in existing_events}
     
     while current_date <= end_date:
@@ -146,7 +144,7 @@ def run_backtest():
         dt = datetime.combine(current_date, datetime.min.time(), tzinfo=timezone.utc)
         event = {
             **scored,
-            "event_name": EVENT_NAME,
+            "event_name": event_name,
             "sdi_score": sdi,
             "created_at": dt
         }
@@ -155,6 +153,15 @@ def run_backtest():
         logger.info(f"Stored event: severity={scored.get('severity')}, SDI={sdi:.2f}")
         
         current_date += timedelta(days=1)
+        
+    update_backtest_job(job_id, "completed")
+    logger.info(f"Backtest job {job_id} for {event_name} completed.")
+        
+    except Exception as exc:
+        logger.error(f"Backtest job {job_id} failed: {exc}", exc_info=True)
+        update_backtest_job(job_id, "failed", str(exc))
 
 if __name__ == "__main__":
-    run_backtest()
+    # Local CLI testing for backward compatibility (will create a dummy job_id 0)
+    # This won't work perfectly if foreign keys were added, but job_id is just an int here.
+    run_backtest(0, "red_sea_attacks")

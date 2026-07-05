@@ -7,16 +7,23 @@ import {
   Tooltip, ResponsiveContainer, ReferenceLine, ComposedChart, Area
 } from "recharts"
 import { Panel } from "../ui"
-import { fetchBacktest, type BacktestResult } from "@/lib/api"
+import { fetchBacktest, fetchBacktestJobs, triggerBacktest, type BacktestResult, type BacktestJob } from "@/lib/api"
+import { Loader2 } from "lucide-react"
 
 export function HistoricalValidation() {
   const [data, setData] = useState<BacktestResult | null>(null)
+  const [jobs, setJobs] = useState<BacktestJob[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
+  const [triggering, setTriggering] = useState(false)
 
-  useEffect(() => {
-    fetchBacktest("red_sea_attacks")
-      .then(res => {
+  const loadData = () => {
+    setLoading(true)
+    Promise.all([
+      fetchBacktest("red_sea_attacks").catch(() => null),
+      fetchBacktestJobs().catch(() => [])
+    ]).then(([res, j]) => {
+      if (res && res.series && res.series.length > 0) {
         setData({
           ...res,
           series: res.series.map((s: any) => ({
@@ -24,39 +31,115 @@ export function HistoricalValidation() {
             sdi_range: [s.confidence_low || s.sdi_score, s.confidence_high || s.sdi_score]
           }))
         })
-        setLoading(false)
-      })
-      .catch(err => {
-        console.error("Backtest failed to load", err)
+        setError(false)
+      } else {
+        setData(null)
         setError(true)
-        setLoading(false)
-      })
-  }, [])
-
-  if (loading) {
-    return (
-      <Panel title="Historical Validation: Red Sea Crisis (Nov 2023 - Jan 2024)" icon={<ShieldAlert className="h-4 w-4 text-emerald-400" />}>
-        <div className="flex h-[400px] w-full items-center justify-center text-slate-500">Loading backtest data...</div>
-      </Panel>
-    )
+      }
+      setJobs(j)
+      setLoading(false)
+    })
   }
 
-  if (error || !data || data.series.length === 0) {
-    return (
-      <Panel title="Historical Validation: Red Sea Crisis (Nov 2023 - Jan 2024)" icon={<ShieldAlert className="h-4 w-4 text-emerald-400" />}>
-        <div className="flex h-[400px] w-full flex-col items-center justify-center gap-4 text-slate-500">
-          <AlertTriangle className="h-8 w-8 text-rose-500/50" />
-          <p>No backtest data available.</p>
-          <p className="text-xs text-slate-600">Run the `run_backtest.py` script on the backend to populate historical data.</p>
-        </div>
-      </Panel>
-    )
+  useEffect(() => {
+    loadData()
+    // Poll jobs every 5s if there's a pending/running job
+    const interval = setInterval(() => {
+      fetchBacktestJobs().then(j => {
+        setJobs(j)
+        if (j.some(job => job.status === 'pending' || job.status === 'running')) {
+          // If a job just completed, refresh the main chart data
+          const hadRunning = jobs.some(old => old.status === 'pending' || old.status === 'running')
+          const hasRunning = j.some(newj => newj.status === 'pending' || newj.status === 'running')
+          if (hadRunning && !hasRunning) {
+            loadData()
+          }
+        }
+      }).catch(console.error)
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [])
+
+  const handleRunBacktest = async () => {
+    setTriggering(true)
+    try {
+      await triggerBacktest("red_sea_attacks")
+      const updatedJobs = await fetchBacktestJobs()
+      setJobs(updatedJobs)
+    } catch (err) {
+      console.error(err)
+      alert("Failed to trigger backtest")
+    }
+    setTriggering(false)
   }
 
   return (
-    <Panel title="Historical Validation: Red Sea Crisis (Nov 2023 - Jan 2024)" icon={<ShieldAlert className="h-4 w-4 text-emerald-400" />}>
-      <div className="p-4">
-        
+    <div className="flex flex-col gap-4">
+      {/* Job Manager Panel */}
+      <Panel title="Backtest Job Manager" icon={<ShieldAlert className="h-4 w-4 text-slate-400" />}>
+        <div className="p-4 flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-200">Historical Scenarios</h3>
+            <button 
+              onClick={handleRunBacktest} 
+              disabled={triggering || jobs.some(j => j.status === 'pending' || j.status === 'running')}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm rounded transition-colors flex items-center gap-2"
+            >
+              {triggering && <Loader2 className="h-4 w-4 animate-spin" />}
+              Run Red Sea Backtest
+            </button>
+          </div>
+          
+          {jobs.length > 0 && (
+            <div className="overflow-x-auto rounded border border-slate-800">
+              <table className="w-full text-left text-sm text-slate-300">
+                <thead className="bg-slate-900 text-xs uppercase text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">ID</th>
+                    <th className="px-4 py-3">Event</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Created</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800 bg-slate-950">
+                  {jobs.slice(0, 5).map(job => (
+                    <tr key={job.id}>
+                      <td className="px-4 py-3 font-mono text-xs">{job.id}</td>
+                      <td className="px-4 py-3">{job.event_name}</td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium
+                          ${job.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400' :
+                            job.status === 'failed' ? 'bg-rose-500/10 text-rose-400' :
+                            job.status === 'running' ? 'bg-cyan-500/10 text-cyan-400' :
+                            'bg-amber-500/10 text-amber-400'}`}>
+                          {job.status === 'running' && <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />}
+                          {job.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-slate-500">
+                        {new Date(job.created_at).toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </Panel>
+
+      <Panel title="Historical Validation: Red Sea Crisis (Nov 2023 - Jan 2024)" icon={<ShieldAlert className="h-4 w-4 text-emerald-400" />}>
+        <div className="p-4">
+          {loading ? (
+            <div className="flex h-[400px] w-full items-center justify-center text-slate-500">Loading backtest data...</div>
+          ) : error || !data || data.series.length === 0 ? (
+            <div className="flex h-[400px] w-full flex-col items-center justify-center gap-4 text-slate-500">
+              <AlertTriangle className="h-8 w-8 text-rose-500/50" />
+              <p>No backtest data available.</p>
+              <p className="text-xs text-slate-600">Run the backtest using the button above to populate historical data.</p>
+            </div>
+          ) : (
+            <div className="w-full">
         {/* Headline Metric */}
         <div className="mb-6 rounded-lg border border-emerald-500/30 bg-emerald-950/20 p-4">
           <div className="flex items-center gap-4">
@@ -172,8 +255,10 @@ export function HistoricalValidation() {
             </ComposedChart>
           </ResponsiveContainer>
         </div>
-
+            </div>
+        )}
       </div>
     </Panel>
+  </div>
   )
 }

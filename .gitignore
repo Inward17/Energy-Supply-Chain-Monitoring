@@ -11,6 +11,13 @@ __pycache__/
 build/
 develop-eggs/
 dist/
+.env
+scratch/
+scratch_tree.py
+frontend/playwright-report/
+frontend/test-results/
+.venv/
+venv/
 downloads/
 eggs/
 .eggs/

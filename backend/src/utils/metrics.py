@@ -15,6 +15,9 @@ from __future__ import annotations
 import os
 import math
 from typing import Sequence
+from dotenv import load_dotenv
+
+load_dotenv(override=True)
 
 
 # ---------------------------------------------------------------------------
@@ -56,6 +59,9 @@ def supply_disruption_index(
     Returns:
         SDI score in [0, 100] range (scaled for dashboard display).
     """
+    if round(w1 + w2 + w3 + w4, 4) != 1.0:
+        raise ValueError(f"SDI weights must sum to 1.0, got {w1 + w2 + w3 + w4}")
+        
     raw = w1 * _clamp(p_risk) + w2 * _clamp(delta_d_vessel) + w3 * _clamp(delta_p_price) + w4 * _clamp(delta_p_freight)
     return round(raw * 100, 2)
 

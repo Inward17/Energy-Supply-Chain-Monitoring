@@ -35,12 +35,13 @@ export default function DynamicMap({ vessels, events }: DynamicMapProps) {
       minZoom={2.5}
       maxBounds={maxBounds}
       maxBoundsViscosity={1.0}
-      style={{ height: "100%", width: "100%", background: "#020617" }}
+      style={{ height: "100%", minHeight: "540px", width: "100%", background: "#020617", position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
       zoomControl={false}
       attributionControl={false}
     >
       <TileLayer
-        url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+        url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"
+        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
         noWrap={true}
         bounds={maxBounds}
       />

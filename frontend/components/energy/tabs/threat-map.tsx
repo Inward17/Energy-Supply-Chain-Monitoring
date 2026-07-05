@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import dynamic from "next/dynamic"
 import { Globe, Ship, Loader2 } from "lucide-react"
 import { Panel } from "../ui"
-import { fetchVessels, fetchRiskEvents, type VesselPosition, type RiskEvent } from "@/lib/api"
+import { fetchVessels, fetchRiskEvents, fetchLiveMetrics, type VesselPosition, type RiskEvent } from "@/lib/api"
 
 // Dynamically import the map component with SSR disabled
 const DynamicMap = dynamic(() => import("./dynamic-map"), { 
@@ -15,15 +15,17 @@ const DynamicMap = dynamic(() => import("./dynamic-map"), {
 export function ThreatMap() {
   const [vessels, setVessels] = useState<VesselPosition[]>([])
   const [events, setEvents] = useState<RiskEvent[]>([])
+  const [aisConfigured, setAisConfigured] = useState<boolean>(true)
 
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    Promise.all([fetchVessels(), fetchRiskEvents(20)])
-      .then(([v, e]) => {
+    Promise.all([fetchVessels(), fetchRiskEvents(20), fetchLiveMetrics()])
+      .then(([v, e, metrics]) => {
         setVessels(v)
         setEvents(e)
+        setAisConfigured(metrics.ais_configured !== false)
       })
       .catch((err) => {
         console.error("Failed to load map data", err)
@@ -34,9 +36,14 @@ export function ThreatMap() {
 
   return (
     <Panel title="Global Threat Map" icon={<Globe className="h-4 w-4 text-cyan-400" />}>
-      <div className="p-4">
+      <div className="p-4 flex flex-col h-full">
+        {!aisConfigured && (
+          <div className="mb-4 text-orange-400 bg-orange-400/10 p-3 rounded border border-orange-400/20 text-sm">
+            <strong>AISStream Key Missing:</strong> Live vessel telemetry is disabled. Showing last-known historical vessel positions.
+          </div>
+        )}
         {error && <div className="mb-4 text-rose-500 bg-rose-500/10 p-2 rounded">Failed to load map data: {error}</div>}
-        <div className="relative h-[540px] w-full overflow-hidden rounded-lg border border-slate-800 bg-slate-950">
+        <div className="relative flex-1 min-h-[540px] w-full overflow-hidden rounded-lg border border-slate-800 bg-slate-950">
           
           {loading ? (
             <div className="flex h-full w-full items-center justify-center">

@@ -15,6 +15,7 @@ All outputs are structured dicts consumed directly by app.py.
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 from src.database.postgres_db import (
@@ -148,6 +149,8 @@ def compute_current_sdi() -> dict[str, Any]:
         "vessel_count":     len(vessels),
         "tanker_count":     sum(region_counts_tanker.values()),
         "active_alerts":    len([e for e in events if float(e.get("severity", 0)) > 0.5]),
+        "gemini_configured": bool(os.getenv("GEMINI_API_KEY", "")),
+        "ais_configured":    bool(os.getenv("AISSTREAM_API_KEY", "")),
     }
 
 
