@@ -131,10 +131,13 @@ def calculate_spr_impact(
                 "cost":        lever["cost"],
             })
 
-    adjusted_shortfall = max(0, daily_shortfall - cumulative_reduction)
+    adjusted_shortfall = max(0.0, daily_shortfall - cumulative_reduction)
     if adjusted_shortfall > 0 and adjusted_shortfall < daily_shortfall:
         adjusted_survival = SPR_CAPACITY_MB / adjusted_shortfall
         adjusted_gap = max(0.0, lead_time_days - adjusted_survival)
+    elif adjusted_shortfall == 0:
+        adjusted_survival = 999.0
+        adjusted_gap = 0.0
     else:
         adjusted_survival = actual_spr_survival_days
         adjusted_gap = max(0.0, lead_time_days - adjusted_survival)

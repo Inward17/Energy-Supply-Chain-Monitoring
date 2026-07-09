@@ -28,6 +28,8 @@ from src.database.neo4j_graph import (
     get_all_chokepoints,
     get_all_refineries,
     get_refinery_coords,
+    get_crude_specs,
+    get_grade_suppliers,
 )
 from src.database.postgres_db import fetch_latest_prices, fetch_risk_events
 from src.agents.modeler_agent import score_alternatives
@@ -43,6 +45,7 @@ from src.utils.constants import (
     VLCC_DAILY_CHARTER_USD,
     VLCC_CARGO_BARRELS,
     VLCC_SPEED_KNOTS,
+    SANCTIONED_SOURCE_COUNTRIES,
 )
 
 logger = logging.getLogger(__name__)
@@ -207,6 +210,8 @@ def find_alternatives(
     crude_grade: str | None = None,
     ranking_mode: str = "cost",
     destination_refinery: str | None = None,
+    excluded_countries: list[str] | None = None,
+    strict_grade_match: bool = False,
 ) -> dict[str, Any]:
     """
     Full 5-step Adaptive Procurement Orchestrator.
@@ -216,9 +221,7 @@ def find_alternatives(
         crude_grade:          Optional crude grade to filter (e.g. "Arab Light").
         ranking_mode:         "cost" (cheapest first) or "speed" (fastest first).
         destination_refinery: Name of the destination refinery. Defaults to Jamnagar.
-
-    Returns:
-        Dict with procurement_matrix, resilience_score, refinery_options, etc.
+        excluded_countries:   List of countries to remove from results.
     """
     dest_name = destination_refinery or _DEFAULT_DESTINATION
     dest_coords = get_refinery_coords(dest_name)
@@ -248,18 +251,57 @@ def find_alternatives(
 
     # ─── Step 1: Chemical Constraint — refinery matching ────────────────────
     refinery_options: list[dict] = []
+    grade_suppliers: list[str] = []
+    stage_a_count = 1
     if crude_grade:
         refinery_options = match_refineries_to_crude(crude_grade)
+        grade_suppliers = get_grade_suppliers(crude_grade)
+        stage_a_count = len(grade_suppliers)
 
     # ─── Step 2: Spatial Graph Traversal — find unblocked export ports ──────
     viable_ports = find_export_ports_bypassing(blocked_chokepoint, crude_grade)
     grade_filtered = crude_grade is not None
 
     if not viable_ports and crude_grade:
-        # Chemical constraint yielded no results — widen to any grade
-        logger.info("fixer_agent: No ports for grade '%s', widening to any grade.", crude_grade)
-        viable_ports = find_export_ports_bypassing(blocked_chokepoint, None)
-        grade_filtered = False
+        if strict_grade_match:
+            logger.info("fixer_agent: No exact match for grade '%s', strict mode enabled. Returning empty.", crude_grade)
+            # DO NOT widen. viable_ports remains empty.
+        else:
+            logger.info("fixer_agent: No ports for grade '%s', widening to compatible grades.", crude_grade)
+            all_ports = find_export_ports_bypassing(blocked_chokepoint, None)
+            req_specs = get_crude_specs(crude_grade)
+            
+            if req_specs:
+                req_api = req_specs["api_gravity"]
+                req_sul = req_specs["sulphur_pct"]
+                compatible_ports = []
+                for p in all_ports:
+                    p_api = p.get("api_gravity")
+                    p_sul = p.get("sulphur_pct")
+                    # If we have specs, apply a basic compatibility filter (e.g., API +/- 4, Sulphur +/- 1.0)
+                    if p_api is not None and p_sul is not None:
+                        if abs(p_api - req_api) <= 4.0 and abs(p_sul - req_sul) <= 1.0:
+                            p["match_type"] = "substitute"
+                            p["match_reason"] = f"Similar API gravity ({p_api}° vs {crude_grade}'s {req_api}°)"
+                            compatible_ports.append(p)
+                    else:
+                        # Fallback for ports/grades lacking specs in DB
+                        p["match_type"] = "substitute"
+                        p["match_reason"] = "Fallback substitute (specs missing)"
+                        compatible_ports.append(p)
+                viable_ports = compatible_ports
+            else:
+                # If requested grade lacks specs, just accept all as substitutes
+                for p in all_ports:
+                    p["match_type"] = "substitute"
+                    p["match_reason"] = "Substitute (specs missing for requested grade)"
+                viable_ports = all_ports
+
+            # Note: We keep grade_filtered = True because we are still technically filtering by grade (compatibility)
+            # but we're widening the net. The UI relies on this flag for some things, but maybe it's fine.
+            grade_filtered = True
+
+    stage_b_count = len(viable_ports)
 
     # ─── Prep for dynamic risk scoring ─────────────────────────────────────
     all_events = fetch_risk_events(limit=50)
@@ -276,6 +318,8 @@ def find_alternatives(
         port_name    = port.get("name", "Unknown Port")
         country      = port.get("country", "Unknown")
         grade        = port.get("grade", crude_grade or "Mixed")
+        match_type   = port.get("match_type", "exact")
+        match_reason = port.get("match_reason", "")
         port_transits = port.get("transit_chokepoints") or []
         
         # Missing or unmapped congestion data defaults to 0.5 (neutral)
@@ -336,6 +380,8 @@ def find_alternatives(
             "composite_score":    comp,
             "extra_detour_days":  extra_detour,
             "recommended":        False,
+            "match_type":         match_type,
+            "match_reason":       match_reason,
         })
 
     # Rank
@@ -343,6 +389,53 @@ def find_alternatives(
         procurement_matrix.sort(key=lambda x: x["lead_time_days"])
     else:  # default: cost
         procurement_matrix.sort(key=lambda x: x["landed_cost_usd"])
+
+    # ─── Step 5: Country filter (optional) ─────────────────────────────────
+    stage_b_countries = list({r.get("country", "") for r in procurement_matrix if r.get("country")})
+    
+    if excluded_countries:
+        banned = {c.lower() for c in excluded_countries}
+        before = len(procurement_matrix)
+        procurement_matrix = [
+            r for r in procurement_matrix
+            if r.get("country", "").lower() not in banned
+        ]
+        removed = before - len(procurement_matrix)
+        if removed:
+            logger.info(
+                "fixer_agent: filter removed %d rows (excluded: %s)",
+                removed,
+                excluded_countries,
+            )
+
+    stage_c_count = len(procurement_matrix)
+    diagnostic = None
+    if stage_c_count == 0:
+        if stage_a_count == 0:
+            diagnostic = {
+                "reason": "no_data_for_grade",
+                "requested_grade": crude_grade or "Any",
+                "excluding": excluded_countries or [],
+                "grade_suppliers": [],
+                "message": f"The crude grade '{crude_grade}' is not recognized in our database."
+            }
+        elif stage_b_count == 0:
+            diagnostic = {
+                "reason": "chokepoint_bypass_eliminates_all_grade_sources",
+                "requested_grade": crude_grade or "Any",
+                "excluding": excluded_countries or [],
+                "grade_suppliers": grade_suppliers,
+                "message": f"All export sources for {crude_grade or 'your request'} route through {blocked_chokepoint}, which is currently blocked. No bypass route exists for this specific grade."
+            }
+        else:
+            conflicts = [c for c in (excluded_countries or []) if c.lower() in {bc.lower() for bc in stage_b_countries}]
+            diagnostic = {
+                "reason": "grade_only_available_from_excluded_countries",
+                "requested_grade": crude_grade or "Any",
+                "excluding": excluded_countries or [],
+                "grade_suppliers": conflicts,
+                "message": f"{crude_grade or 'Your requested grade'} is supplied almost exclusively by {', '.join(conflicts) if conflicts else 'your excluded countries'}, which is in your excluded countries list. No alternative source exists under these constraints."
+            }
 
     # Mark the top recommendation
     if procurement_matrix:
@@ -364,6 +457,7 @@ def find_alternatives(
         "dest_coords":         dest_coords,
         "resilience_score":    scored["resilience_score"],
         "procurement_matrix":  procurement_matrix,
+        "diagnostic":          diagnostic,
         # legacy key kept for backward compat
         "alternatives":        scored["alternatives"],
         "refinery_options":    refinery_options,

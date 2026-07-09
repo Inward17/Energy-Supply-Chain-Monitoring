@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS risk_events (
     confidence           DOUBLE PRECISION,
     summary              TEXT,
     sdi_score            DOUBLE PRECISION,
+    source_urls          TEXT[],
     created_at           TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -73,10 +74,12 @@ CREATE TABLE IF NOT EXISTS backtest_jobs (
     id          SERIAL PRIMARY KEY,
     event_name  TEXT NOT NULL,
     status      TEXT DEFAULT 'pending',
-    start_time  TIMESTAMPTZ,
-    end_time    TIMESTAMPTZ,
-    created_at  TIMESTAMPTZ DEFAULT NOW(),
-    error_log   TEXT
+    start_time   TIMESTAMPTZ,
+    end_time     TIMESTAMPTZ,
+    progress_pct INT DEFAULT 0,
+    progress_note TEXT,
+    created_at   TIMESTAMPTZ DEFAULT NOW(),
+    error_log    TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_news_processed ON news_cache (processed, fetched_at DESC);

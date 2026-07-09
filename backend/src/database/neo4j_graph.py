@@ -449,6 +449,60 @@ def get_refinery_coords(refinery_name: str) -> dict[str, float] | None:
         logger.error("get_refinery_coords failed: %s", exc)
         return _fallback()
 
+def get_crude_specs(grade_name: str) -> dict[str, float] | None:
+    """Return api_gravity and sulphur_pct for a crude grade."""
+    driver = get_driver()
+    
+    def _fallback():
+        for g in _CRUDE_GRADES:
+            if g["name"] == grade_name:
+                return {"api_gravity": g["api_gravity"], "sulphur_pct": g["sulphur_pct"]}
+        return None
+
+    if driver is None:
+        return _fallback()
+
+    try:
+        with driver.session() as session:
+            row = session.run(
+                "MATCH (g:CrudeGrade {name: $name}) RETURN g.api_gravity AS api, g.sulphur_pct AS sulphur",
+                name=grade_name,
+            ).single()
+            if row:
+                return {"api_gravity": row["api"], "sulphur_pct": row["sulphur"]}
+            return _fallback()
+    except Exception as exc:
+        logger.error("get_crude_specs failed: %s", exc)
+        return _fallback()
+
+def get_grade_suppliers(grade_name: str) -> list[str]:
+    """Return a unique list of countries that export the specified crude grade."""
+    driver = get_driver()
+
+    def _fallback():
+        countries = set()
+        for p in _EXPORT_PORTS:
+            if grade_name in p["available_grades"]:
+                countries.add(p["country"])
+        return list(countries)
+
+    if driver is None:
+        return _fallback()
+
+    try:
+        with driver.session() as session:
+            result = session.run(
+                "MATCH (p:ExportPort)-[:EXPORTS]->(g:CrudeGrade {name: $name}) "
+                "RETURN DISTINCT p.country AS country",
+                name=grade_name,
+            )
+            records = result.data()
+            if records:
+                return [r["country"] for r in records]
+            return _fallback()
+    except Exception as exc:
+        logger.error("get_grade_suppliers failed: %s", exc)
+        return _fallback()
 
 def get_all_refineries() -> list[dict[str, Any]]:
     """
@@ -520,10 +574,13 @@ def find_export_ports_bypassing(
                     RETURN p.name                  AS name,
                            p.country               AS country,
                            g.name                  AS grade,
+                           g.api_gravity           AS api_gravity,
+                           g.sulphur_pct           AS sulphur_pct,
                            p.baseline_days_to_india AS baseline_days_to_india,
                            p.lat                   AS lat,
                            p.lon                   AS lon,
-                           p.current_congestion_score AS congestion_score
+                           p.current_congestion_score AS congestion_score,
+                           [(p)-[:SHIPS_THROUGH]->(c) | c.name] AS transit_chokepoints
                     ORDER BY p.baseline_days_to_india ASC
                     """,
                     blocked=blocked_chokepoint,
@@ -537,10 +594,13 @@ def find_export_ports_bypassing(
                     RETURN p.name                  AS name,
                            p.country               AS country,
                            g.name                  AS grade,
+                           g.api_gravity           AS api_gravity,
+                           g.sulphur_pct           AS sulphur_pct,
                            p.baseline_days_to_india AS baseline_days_to_india,
                            p.lat                   AS lat,
                            p.lon                   AS lon,
-                           p.current_congestion_score AS congestion_score
+                           p.current_congestion_score AS congestion_score,
+                           [(p)-[:SHIPS_THROUGH]->(c) | c.name] AS transit_chokepoints
                     ORDER BY p.baseline_days_to_india ASC
                     LIMIT 10
                     """,

@@ -35,18 +35,21 @@ from src.agents.fixer_agent import (
 )
 from src.agents.spr_agent import calculate_spr_impact
 from src.agents.briefing_agent import generate_emergency_brief
-from src.agents.modeler_agent import compute_current_sdi, compute_chokepoint_risk_matrix
+from src.agents.modeler_agent import compute_current_sdi, compute_chokepoint_risk_matrix, compute_producer_country_risk_matrix
 from src.database.postgres_db import (
     init_schema,
     fetch_unprocessed_news,
     fetch_vessels,
     fetch_latest_prices,
     fetch_risk_events,
+    fetch_risk_event,
     fetch_latest_sdi,
     fetch_risk_events_backtest,
     create_backtest_job,
+    update_backtest_job,
     fetch_all_backtest_jobs
 )
+from src.database.neo4j_graph import get_driver
 
 from dotenv import load_dotenv
 load_dotenv(override=True)
@@ -119,6 +122,12 @@ def get_live_metrics() -> dict[str, Any]:
             "active_alerts":    sdi_data["active_alerts"],
             "gemini_configured": sdi_data.get("gemini_configured", True),
             "ais_configured":    sdi_data.get("ais_configured", True),
+            "w1":               sdi_data.get("w1", 0.40),
+            "w2":               sdi_data.get("w2", 0.25),
+            "w3":               sdi_data.get("w3", 0.15),
+            "w4":               sdi_data.get("w4", 0.20),
+            "confidence":       sdi_data.get("confidence", 0.5),
+            "updated_at":       sdi_data.get("updated_at"),
         }
     except ValueError as exc:
         logger.warning("get_live_metrics degraded: %s", exc)
@@ -164,14 +173,91 @@ def get_risk_events(limit: int = 10) -> list[dict[str, Any]]:
                 "disruption_type":  e.get("disruption_type", "unknown"),
                 "severity":         round(sev, 3),
                 "severity_label":   label,
+                "severity_reasoning": e.get("severity_reasoning", ""),
                 "affected_chokepoints": cps,
+                "affected_producer_countries": e.get("affected_producer_countries", []),
                 "summary":          e.get("summary", ""),
                 "sdi_score":        float(e.get("sdi_score", 0) or 0),
                 "scored_at":        str(e.get("created_at", "")),
+                "source_urls":      e.get("source_urls", []),
             })
         return result
     except Exception as exc:
         logger.error("get_risk_events failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+@app.get("/api/risk/events/{event_id}")
+def get_risk_event_detail(event_id: int) -> dict[str, Any]:
+    """
+    Return detailed information for a single risk event, including
+    potentially affected crude grades from Neo4j.
+    """
+    try:
+        e = fetch_risk_event(event_id)
+        if not e:
+            raise HTTPException(status_code=404, detail="Event not found")
+
+        sev = float(e.get("severity", 0) or 0)
+        if sev >= 0.8:
+            label = "CRITICAL"
+        elif sev >= 0.6:
+            label = "HIGH"
+        elif sev >= 0.35:
+            label = "MODERATE"
+        else:
+            label = "LOW"
+
+        cps = e.get("affected_chokepoints") or []
+        if isinstance(cps, str):
+            import json as _json
+            try:
+                cps = _json.loads(cps)
+            except Exception:
+                cps = []
+                
+        prods = e.get("affected_producer_countries") or []
+        if isinstance(prods, str):
+            import json as _json
+            try:
+                prods = _json.loads(prods)
+            except Exception:
+                prods = []
+
+        affected_grades = []
+        driver = get_driver()
+        if driver and (prods or cps):
+            with driver.session() as session:
+                query = """
+                MATCH (p:ExportPort)-[:EXPORTS]->(g:CrudeGrade)
+                WHERE p.country IN $countries
+                RETURN DISTINCT g.name AS grade
+                UNION
+                MATCH (p:ExportPort)-[:EXPORTS]->(g:CrudeGrade), (p)-[:SHIPS_THROUGH]->(c:Chokepoint)
+                WHERE c.name IN $chokepoints
+                RETURN DISTINCT g.name AS grade
+                """
+                res = session.run(query, countries=prods, chokepoints=cps)
+                affected_grades = [r["grade"] for r in res]
+
+        return {
+            "id":               e.get("id", 0),
+            "region":           e.get("region", "Unknown"),
+            "disruption_type":  e.get("disruption_type", "unknown"),
+            "severity":         round(sev, 3),
+            "severity_label":   label,
+            "severity_reasoning": e.get("severity_reasoning", ""),
+            "affected_chokepoints": cps,
+            "affected_producer_countries": prods,
+            "affected_grades":  affected_grades,
+            "summary":          e.get("summary", ""),
+            "sdi_score":        float(e.get("sdi_score", 0) or 0),
+            "scored_at":        str(e.get("created_at", "")),
+            "source_urls":      e.get("source_urls", []),
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("get_risk_event_detail failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -188,6 +274,22 @@ def get_chokepoint_matrix() -> list[dict[str, Any]]:
         return [{"status": "degraded", "error": str(exc)}]
     except Exception as exc:
         logger.error("get_chokepoint_matrix failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/risk/producers")
+def get_producer_matrix() -> list[dict[str, Any]]:
+    """
+    Return the per-producer risk matrix.
+    Powers the Risk Intelligence → Producer Risk Matrix table.
+    """
+    try:
+        return compute_producer_country_risk_matrix()
+    except ValueError as exc:
+        logger.warning("get_producer_matrix degraded: %s", exc)
+        return [{"status": "degraded", "error": str(exc)}]
+    except Exception as exc:
+        logger.error("get_producer_matrix failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -344,6 +446,8 @@ def run_reroute(req: RerouteRequest) -> dict[str, Any]:
             crude_grade=req.crude_grade,
             ranking_mode=req.ranking_mode,
             destination_refinery=req.destination_refinery,
+            excluded_countries=req.excluded_countries,
+            strict_grade_match=req.strict_grade_match,
         )
         pm = result.get("procurement_matrix", [])
         # Mark top pick for the UI
@@ -351,6 +455,7 @@ def run_reroute(req: RerouteRequest) -> dict[str, Any]:
             row["top"] = (i == 0)
         return {
             "procurement_matrix":   pm,
+            "diagnostic":           result.get("diagnostic"),
             "resilience_score":     result.get("resilience_score", 0),
             "current_brent_usd":    result.get("current_brent_usd", 0),
             "grade_filtered":       result.get("grade_filtered", False),
@@ -412,12 +517,17 @@ def run_war_room(req: WarRoomRequest) -> dict[str, Any]:
         # Step 1: Reroute
         fixer_result = find_alternatives(
             blocked_chokepoint=req.blocked_chokepoint,
-            crude_grade=None,
-            ranking_mode="cost",
+            crude_grade=req.crude_grade,
+            ranking_mode=req.ranking_mode,
             destination_refinery=req.destination_refinery,
+            excluded_countries=req.excluded_countries,
+            strict_grade_match=req.strict_grade_match,
         )
         pm = fixer_result.get("procurement_matrix", [])
+        diagnostic = fixer_result.get("diagnostic")
         if not pm:
+            if diagnostic:
+                return {"top_routes": [], "diagnostic": diagnostic}
             raise HTTPException(status_code=422, detail="No viable reroute alternatives found in graph DB.")
 
         top = pm[0]
@@ -468,8 +578,10 @@ def run_war_room(req: WarRoomRequest) -> dict[str, Any]:
                     "grade":    r.get("crude_grade", ""),
                     "landed":   f"${float(r.get('landed_cost_usd', 0)):.2f}",
                     "lead":     f"{float(r.get('lead_time_days', 0)):.1f} days",
+                    "match_type": r.get("match_type", "exact"),
+                    "match_reason": r.get("match_reason", ""),
                 }
-                for r in pm[:3]
+                for r in pm[:5]
             ],
             "spr_trajectory": {
                 "survival_days":  spr.get("survival_days", 0),
@@ -487,6 +599,31 @@ def run_war_room(req: WarRoomRequest) -> dict[str, Any]:
     except Exception as exc:
         logger.error("run_war_room failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
+
+@app.get("/api/backtest/jobs")
+def get_backtest_jobs() -> list[dict[str, Any]]:
+    """Return all backtest jobs (pending, running, completed, failed)."""
+    try:
+        return fetch_all_backtest_jobs()
+    except Exception as exc:
+        logger.error("get_backtest_jobs failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/backtest/trigger")
+def trigger_backtest(req: BacktestRequest) -> dict[str, Any]:
+    """Queue a new backtest job for the cron_worker to process."""
+    try:
+        job_id = create_backtest_job(req.event_name)
+        if not job_id:
+            raise HTTPException(status_code=500, detail="Failed to create backtest job.")
+        return {"job_id": job_id, "status": "pending"}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("trigger_backtest failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
 
 @app.get("/api/backtest/{event_name}")
 def get_backtest(event_name: str) -> dict[str, Any]:
@@ -604,25 +741,3 @@ def get_backtest(event_name: str) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@app.post("/api/backtest/trigger")
-def trigger_backtest(req: BacktestRequest) -> dict[str, Any]:
-    """Queue a new backtest job for the cron_worker to process."""
-    try:
-        job_id = create_backtest_job(req.event_name)
-        if not job_id:
-            raise HTTPException(status_code=500, detail="Failed to create backtest job.")
-        return {"job_id": job_id, "status": "pending"}
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.error("trigger_backtest failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
-
-@app.get("/api/backtest/jobs")
-def get_backtest_jobs() -> list[dict[str, Any]]:
-    """Return all backtest jobs (pending, running, completed, failed)."""
-    try:
-        return fetch_all_backtest_jobs()
-    except Exception as exc:
-        logger.error("get_backtest_jobs failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))

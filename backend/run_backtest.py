@@ -12,156 +12,194 @@ from src.ingestion.gdelt_collector import fetch_historical
 from src.ingestion.market_trawler import fetch_historical_prices
 from src.agents.sentinel_agent import _build_prompt, _call_gemini
 from src.agents.modeler_agent import normalise_price_delta, normalise_freight_delta, supply_disruption_index
-from src.database.postgres_db import upsert_risk_event_backtest, update_backtest_job
+from src.database.postgres_db import upsert_risk_event_backtest, update_backtest_job, update_backtest_job_progress
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-def run_backtest(job_id: int, event_name: str, start_date_str: str = "2023-11-15", end_date_str: str = "2024-01-31"):
+def run_backtest(job_id: int, event_name: str, start_date_str: str = None, end_date_str: str = None):
     try:
+        EVENT_DATES = {
+            "red_sea_attacks": ("2023-11-15", "2024-01-31"),
+            "russia_ukraine_buildup": ("2021-12-01", "2022-02-28"),
+            "israel_iran_war_2025": ("2025-05-25", "2025-06-30")
+        }
+        if not start_date_str or not end_date_str:
+            if event_name in EVENT_DATES:
+                start_date_str, end_date_str = EVENT_DATES[event_name]
+            else:
+                start_date_str, end_date_str = "2023-11-15", "2024-01-31"
+
         update_backtest_job(job_id, "running")
         start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
         end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
-    
-    # We need a 30-day buffer for rolling stats
-    buffer_start = start_date - timedelta(days=45) 
-    
-    logger.info("Fetching historical Brent prices to compute rolling stats...")
-    fetch_historical_prices(buffer_start.strftime("%Y-%m-%d"), (end_date + timedelta(days=1)).strftime("%Y-%m-%d"), ["BZ=F", "BOAT"])
-    
-    # Download prices into pandas to calculate rolling stats efficiently
-    df_brent = yf.download("BZ=F", start=buffer_start.strftime("%Y-%m-%d"), end=(end_date + timedelta(days=1)).strftime("%Y-%m-%d"), progress=False, auto_adjust=True)
-    if hasattr(df_brent.columns, "levels"):
-        df_brent.columns = df_brent.columns.get_level_values(0)
-    
-    df_brent["Close"] = df_brent["Close"].astype(float)
-    df_brent["Rolling_Mean"] = df_brent["Close"].rolling(30).mean()
-    df_brent["Rolling_Std"] = df_brent["Close"].rolling(30).std()
+        
+        # We need a 45-day buffer for rolling stats
+        buffer_start = start_date - timedelta(days=45)
+        
+        logger.info("Fetching historical Brent prices to compute rolling stats...")
+        fetch_historical_prices(buffer_start.strftime("%Y-%m-%d"), (end_date + timedelta(days=1)).strftime("%Y-%m-%d"), ["BZ=F", "BOAT"])
+        
+        # Download prices into pandas to calculate rolling stats efficiently
+        df_brent = yf.download("BZ=F", start=buffer_start.strftime("%Y-%m-%d"), end=(end_date + timedelta(days=1)).strftime("%Y-%m-%d"), progress=False, auto_adjust=True)
+        if hasattr(df_brent.columns, "levels"):
+            df_brent.columns = df_brent.columns.get_level_values(0)
+        
+        df_brent["Close"] = df_brent["Close"].astype(float)
+        df_brent["Rolling_Mean"] = df_brent["Close"].rolling(30).mean()
+        df_brent["Rolling_Std"] = df_brent["Close"].rolling(30).std()
 
-    # Freight
-    df_freight = yf.download("BOAT", start=buffer_start.strftime("%Y-%m-%d"), end=(end_date + timedelta(days=1)).strftime("%Y-%m-%d"), progress=False, auto_adjust=True)
-    if hasattr(df_freight.columns, "levels"):
-        df_freight.columns = df_freight.columns.get_level_values(0)
-    
-    df_freight["Close"] = df_freight["Close"].astype(float)
-    df_freight["Rolling_Mean"] = df_freight["Close"].rolling(30).mean()
-    df_freight["Rolling_Std"] = df_freight["Close"].rolling(30).std()
-    
-    current_date = start_date
-    
-    # Pre-fetch existing events to skip them
-    from src.database.postgres_db import fetch_risk_events_backtest
-    import time
-    existing_events = fetch_risk_events_backtest(event_name)
-    existing_dates = {ev["created_at"].date() for ev in existing_events}
-    
-    while current_date <= end_date:
-        logger.info(f"--- Processing {current_date} ---")
+        # Freight
+        df_freight = yf.download("BOAT", start=buffer_start.strftime("%Y-%m-%d"), end=(end_date + timedelta(days=1)).strftime("%Y-%m-%d"), progress=False, auto_adjust=True)
+        if hasattr(df_freight.columns, "levels"):
+            df_freight.columns = df_freight.columns.get_level_values(0)
         
-        if current_date in existing_dates:
-            logger.info(f"Date {current_date} already exists. Skipping.")
-            current_date += timedelta(days=1)
-            continue
-            
-        # 1. Get Brent and Freight stats for this date
-        # We find the closest previous trading day if current_date is a weekend
-        subset_brent = df_brent[df_brent.index.date <= current_date]
-        subset_freight = df_freight[df_freight.index.date <= current_date]
+        df_freight["Close"] = df_freight["Close"].astype(float)
+        df_freight["Rolling_Mean"] = df_freight["Close"].rolling(30).mean()
+        df_freight["Rolling_Std"] = df_freight["Close"].rolling(30).std()
         
-        if subset_brent.empty or subset_freight.empty:
-            logger.warning(f"No price data before {current_date}. Skipping.")
-            current_date += timedelta(days=1)
-            continue
+        current_date = start_date
+        total_days = (end_date - start_date).days + 1
+        days_processed = 0
+        
+        # Pre-fetch existing events to skip them
+        from src.database.postgres_db import fetch_risk_events_backtest
+        import time
+        existing_events = fetch_risk_events_backtest(event_name)
+        existing_dates = {ev["created_at"].date() for ev in existing_events}
+        
+        while current_date <= end_date:
+            logger.info(f"--- Processing {current_date} ---")
             
-        latest_row_b = subset_brent.iloc[-1]
-        brent_stats = {
-            "current_price": float(latest_row_b["Close"]),
-            "rolling_mean": float(latest_row_b["Rolling_Mean"]) if pd.notna(latest_row_b["Rolling_Mean"]) else float(latest_row_b["Close"]),
-            "rolling_std": float(latest_row_b["Rolling_Std"]) if pd.notna(latest_row_b["Rolling_Std"]) else 1.0,
-        }
+            if current_date in existing_dates:
+                logger.info(f"Date {current_date} already exists. Skipping.")
+                current_date += timedelta(days=1)
+                days_processed += 1
+                continue
+                
+            # 1. Get Brent and Freight stats for this date
+            # We find the closest previous trading day if current_date is a weekend
+            subset_brent = df_brent[df_brent.index.date <= current_date]
+            subset_freight = df_freight[df_freight.index.date <= current_date]
+            
+            if subset_brent.empty or subset_freight.empty:
+                logger.warning(f"No price data before {current_date}. Skipping.")
+                current_date += timedelta(days=1)
+                continue
+                
+            latest_row_b = subset_brent.iloc[-1]
+            brent_stats = {
+                "current_price": float(latest_row_b["Close"]),
+                "rolling_mean": float(latest_row_b["Rolling_Mean"]) if pd.notna(latest_row_b["Rolling_Mean"]) else float(latest_row_b["Close"]),
+                "rolling_std": float(latest_row_b["Rolling_Std"]) if pd.notna(latest_row_b["Rolling_Std"]) else 1.0,
+            }
 
-        latest_row_f = subset_freight.iloc[-1]
-        freight_stats = {
-            "current_price": float(latest_row_f["Close"]),
-            "rolling_mean": float(latest_row_f["Rolling_Mean"]) if pd.notna(latest_row_f["Rolling_Mean"]) else float(latest_row_f["Close"]),
-            "rolling_std": float(latest_row_f["Rolling_Std"]) if pd.notna(latest_row_f["Rolling_Std"]) else 1.0,
-        }
-        
-        # Sleep to avoid GDELT rate limits
-        time.sleep(10)
-        
-        # 2. Fetch GDELT news
-        startdatetime = current_date.strftime("%Y%m%d000000")
-        enddatetime = (current_date + timedelta(days=1)).strftime("%Y%m%d000000")
-        articles = fetch_historical(startdatetime, enddatetime)
-        
-        # Pick top 10 articles to stay within prompt limits
-        headlines = [a["title"] for a in articles[:10]]
-        
-        if not headlines:
-            logger.info("No articles found (or rate limit hit). Scoring as 0.")
-            scored = {"severity": 0.0, "region": "Global", "disruption_type": "None", "summary": "No news", "confidence": 1.0}
-        else:
-            # 3. Call Gemini
-            prompt = _build_prompt(headlines)
-            while True:
-                try:
-                    scored = _call_gemini(prompt)
-                    if not scored:
-                        logger.warning("Gemini returned empty. Retrying in 60s...")
+            latest_row_f = subset_freight.iloc[-1]
+            freight_stats = {
+                "current_price": float(latest_row_f["Close"]),
+                "rolling_mean": float(latest_row_f["Rolling_Mean"]) if pd.notna(latest_row_f["Rolling_Mean"]) else float(latest_row_f["Close"]),
+                "rolling_std": float(latest_row_f["Rolling_Std"]) if pd.notna(latest_row_f["Rolling_Std"]) else 1.0,
+            }
+            
+            # Sleep to avoid GDELT rate limits
+            time.sleep(10)
+            
+            # 2. Fetch GDELT news
+            startdatetime = current_date.strftime("%Y%m%d000000")
+            enddatetime = (current_date + timedelta(days=1)).strftime("%Y%m%d000000")
+            articles = fetch_historical(startdatetime, enddatetime)
+            
+            # Pick top 10 articles to stay within prompt limits
+            headlines = [a["title"] for a in articles[:10]]
+            
+            if not headlines:
+                logger.info("No articles found (or rate limit hit). Scoring as 0.")
+                scored = {"severity": 0.0, "region": "Global", "disruption_type": "None", "summary": "No news", "confidence": 1.0}
+            else:
+                # 3. Call Gemini
+                prompt = _build_prompt(headlines)
+                max_retries = 3
+                retry_count = 0
+                while True:
+                    try:
+                        scored = _call_gemini(prompt)
+                        if not scored:
+                            if retry_count >= max_retries:
+                                raise RuntimeError("Gemini returned empty 3 times in a row.")
+                            logger.warning("Gemini returned empty. Retrying in 60s...")
+                            retry_count += 1
+                            time.sleep(60)
+                            continue
+                        break # Success
+                    except Exception as exc:
+                        if retry_count >= max_retries:
+                            logger.error("Gemini call failed permanently after %d retries: %s", max_retries, exc)
+                            raise RuntimeError(f"Gemini API daily quota likely exhausted. Aborting backtest: {exc}")
+                        logger.error("Gemini call failed: %s. Retrying in 60s...", exc)
+                        retry_count += 1
                         time.sleep(60)
-                        continue
-                    break # Success
-                except Exception as exc:
-                    logger.error("Gemini call failed: %s. Retrying in 60s...", exc)
-                    time.sleep(60)
+                
+            # 4. Compute SDI
+            delta_p = normalise_price_delta(
+                current_price=brent_stats["current_price"],
+                rolling_mean=brent_stats["rolling_mean"],
+                rolling_std=brent_stats["rolling_std"],
+            )
             
-        # 4. Compute SDI
-        delta_p = normalise_price_delta(
-            current_price=brent_stats["current_price"],
-            rolling_mean=brent_stats["rolling_mean"],
-            rolling_std=brent_stats["rolling_std"],
-        )
-        
-        delta_f = normalise_freight_delta(
-            current_freight=freight_stats["current_price"],
-            rolling_mean=freight_stats["rolling_mean"],
-            rolling_std=freight_stats["rolling_std"],
-        )
-        
-        # Historical AIS data unavailable pre-dating our ingestion start; 
-        # vessel density held neutral for backtest purposes
-        delta_d = 0.5
-        
-        sdi = supply_disruption_index(
-            p_risk=float(scored.get("severity", 0.0)),
-            delta_d_vessel=delta_d,
-            delta_p_price=delta_p,
-            delta_p_freight=delta_f,
-        )
-        
-        # 5. Insert to DB
-        dt = datetime.combine(current_date, datetime.min.time(), tzinfo=timezone.utc)
-        event = {
-            **scored,
-            "event_name": event_name,
-            "sdi_score": sdi,
-            "created_at": dt
-        }
-        
-        upsert_risk_event_backtest(event)
-        logger.info(f"Stored event: severity={scored.get('severity')}, SDI={sdi:.2f}")
-        
-        current_date += timedelta(days=1)
-        
-    update_backtest_job(job_id, "completed")
-    logger.info(f"Backtest job {job_id} for {event_name} completed.")
-        
+            delta_f = normalise_freight_delta(
+                current_freight=freight_stats["current_price"],
+                rolling_mean=freight_stats["rolling_mean"],
+                rolling_std=freight_stats["rolling_std"],
+            )
+            
+            # Historical AIS data unavailable pre-dating our ingestion start; 
+            # vessel density held neutral for backtest purposes
+            delta_d = 0.5
+            
+            sdi = supply_disruption_index(
+                p_risk=float(scored.get("severity", 0.0)),
+                delta_d_vessel=delta_d,
+                delta_p_price=delta_p,
+                delta_p_freight=delta_f,
+            )
+            
+            # 5. Insert to DB
+            dt = datetime.combine(current_date, datetime.min.time(), tzinfo=timezone.utc)
+            event = {
+                **scored,
+                "event_name": event_name,
+                "sdi_score": sdi,
+                "created_at": dt
+            }
+            
+            upsert_risk_event_backtest(event)
+            logger.info(f"Stored event: severity={scored.get('severity')}, SDI={sdi:.2f}")
+            
+            days_processed += 1
+            # Emit a progress update every 5 days so the UI shows a live percentage
+            if days_processed % 5 == 0 or current_date == end_date:
+                pct = int(days_processed / total_days * 100)
+                update_backtest_job_progress(job_id, min(pct, 99), str(current_date))
+            
+            current_date += timedelta(days=1)
+            
+        update_backtest_job(job_id, "completed")
+        logger.info(f"Backtest job {job_id} for {event_name} completed.")
+            
     except Exception as exc:
         logger.error(f"Backtest job {job_id} failed: {exc}", exc_info=True)
         update_backtest_job(job_id, "failed", str(exc))
 
 if __name__ == "__main__":
-    # Local CLI testing for backward compatibility (will create a dummy job_id 0)
-    # This won't work perfectly if foreign keys were added, but job_id is just an int here.
-    run_backtest(0, "red_sea_attacks")
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--job-id", type=int, default=0)
+    parser.add_argument("--event-name", type=str, default="red_sea_attacks")
+    parser.add_argument("--start-date", type=str, default=None)
+    parser.add_argument("--end-date", type=str, default=None)
+    args = parser.parse_args()
+    
+    if args.start_date and args.end_date:
+        run_backtest(args.job_id, args.event_name, args.start_date, args.end_date)
+    else:
+        run_backtest(args.job_id, args.event_name)

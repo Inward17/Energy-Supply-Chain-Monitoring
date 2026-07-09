@@ -5,6 +5,8 @@ class RerouteRequest(BaseModel):
     destination_refinery: str | None = None
     crude_grade: str | None = None
     ranking_mode: str = "cost"
+    excluded_countries: list[str] = Field(default_factory=list)
+    strict_grade_match: bool = False
 
 class SprRequest(BaseModel):
     blocked_chokepoint: str
@@ -20,6 +22,10 @@ class WarRoomRequest(BaseModel):
     blocked_chokepoint: str
     destination_refinery: str | None = None
     disrupted_volume_mbpd: float
+    crude_grade: str | None = None
+    ranking_mode: str = "cost"
+    excluded_countries: list[str] = Field(default_factory=list)
+    strict_grade_match: bool = False
     gdp_impact_rate: float = Field(0.035, ge=0.0, le=0.1)
     run_rate_cut: float = Field(0.15, ge=0.0, le=0.5)
     industrial_cut: float = Field(0.08, ge=0.0, le=0.5)

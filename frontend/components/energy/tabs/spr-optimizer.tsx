@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { Droplet, Gauge, Loader } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { Droplet, Gauge, Loader, GitCompare } from "lucide-react"
 import {
   CartesianGrid,
   Line,
@@ -11,11 +11,14 @@ import {
   Tooltip,
   XAxis,
   YAxis,
+  Legend,
 } from "recharts"
 import { Panel, StatChip } from "../ui"
+import { InfoTooltip } from "@/components/ui/info-tooltip"
 import { fetchSpr, fetchChokepoints, type SprResult } from "@/lib/api"
 import { chartTooltip } from "../chart-tooltip"
 import { demandPlaybook, sprSites } from "../data"
+import { SprAssumptionsForm, SPR_ASSUMPTIONS_DEFAULTS, type SprAssumptionsValue } from "../shared/spr-assumptions-form"
 
 const INDIA_SPR_SITES = [
   { name: "Visakhapatnam", pct: 85 },
@@ -27,34 +30,60 @@ export function SprOptimizer() {
   const [chokepoints, setChokepoints] = useState<string[]>([])
   const [blocked, setBlocked]         = useState("")
   const [leadTime, setLeadTime]       = useState(14)
-  const [gdpRate, setGdpRate]         = useState(0.035)
-  const [runCut, setRunCut]           = useState(15)
-  const [indCut, setIndCut]           = useState(8)
-  const [transCut, setTransCut]       = useState(10)
-  const [phase, setPhase]             = useState<"idle" | "loading" | "done" | "error">("idle")
-  const [result, setResult]           = useState<SprResult | null>(null)
-  const [error, setError]             = useState("")
+  const [assumptions, setAssumptions] = useState<SprAssumptionsValue>(SPR_ASSUMPTIONS_DEFAULTS)
+
+  // Compare mode: second scenario
+  const [compareMode, setCompareMode] = useState(false)
+  const [assumptionsB, setAssumptionsB] = useState<SprAssumptionsValue>({
+    gdpRate: 0.05,
+    runCut: 15,
+    indCut: 10,
+    transCut: 5,
+  })
+
+  const [phase, setPhase]   = useState<"idle" | "loading" | "done" | "error">("idle")
+  const [result, setResult] = useState<SprResult | null>(null)
+  const [resultB, setResultB] = useState<SprResult | null>(null)
+  const [error, setError]   = useState("")
   const isStale = phase === "idle" && result !== null
 
   useEffect(() => {
     fetchChokepoints()
       .then((cps) => { if (cps.length) { setChokepoints(cps); setBlocked(cps[0]) } })
-      .catch(() => {}) // keep fallback
+      .catch(() => {})
   }, [])
 
   async function runSpr() {
     setPhase("loading")
     setError("")
+    setResult(null)
+    setResultB(null)
     try {
-      const data = await fetchSpr({
-        blocked_chokepoint: blocked,
-        lead_time_days: leadTime,
-        gdp_impact_rate_pct: gdpRate,
-        run_rate_cut_pct: runCut,
-        industrial_cut_pct: indCut,
-        transport_cut_pct: transCut,
-      })
-      setResult(data)
+      const calls: Promise<SprResult>[] = [
+        fetchSpr({
+          blocked_chokepoint: blocked,
+          lead_time_days: leadTime,
+          gdp_impact_rate_pct: assumptions.gdpRate * 100,  // slider is decimal, _pct helper /100 cancels out
+          run_rate_cut_pct: assumptions.runCut,
+          industrial_cut_pct: assumptions.indCut,
+          transport_cut_pct: assumptions.transCut,
+        }),
+      ]
+      if (compareMode) {
+        calls.push(
+          fetchSpr({
+            blocked_chokepoint: blocked,
+            lead_time_days: leadTime,
+            gdp_impact_rate_pct: assumptionsB.gdpRate * 100,  // slider is decimal, _pct helper /100 cancels out
+            run_rate_cut_pct: assumptionsB.runCut,
+            industrial_cut_pct: assumptionsB.indCut,
+            transport_cut_pct: assumptionsB.transCut,
+          })
+        )
+      }
+      const results = await Promise.all(calls)
+      setResult(results[0])
+      setResultB(results[1] ?? null)
       setPhase("done")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error")
@@ -66,6 +95,18 @@ export function SprOptimizer() {
   const actions  = result?.demand_actions  ?? []
   const statusColor = result?.status_color ?? "green"
 
+  // Merge burndown series for compare mode
+  // IMPORTANT: use result.burndown_series directly (not the `burndown` derived var)
+  // to avoid stale-closure issues with useMemo.
+  const mergedBurndown = useMemo(() => {
+    const base = result?.burndown_series ?? []
+    if (!compareMode || !resultB) return base
+    return base.map((pt, i) => ({
+      ...pt,
+      managedB: resultB.burndown_series[i]?.managed ?? undefined,
+    }))
+  }, [result, resultB, compareMode])
+
   return (
     <div className="space-y-4">
       <Panel title="SPR Optimizer" icon={<Droplet className="h-4 w-4 text-cyan-400" />}>
@@ -74,7 +115,7 @@ export function SprOptimizer() {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
               <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-slate-400">
-                Blocked Chokepoint
+                <InfoTooltip term="Chokepoint" label="Blocked Chokepoint" />
               </label>
               <select
                 value={blocked}
@@ -91,72 +132,52 @@ export function SprOptimizer() {
               </div>
               <input
                 type="range"
-                min={5}
-                max={60}
-                value={leadTime}
+                min={5} max={60} value={leadTime}
                 onChange={(e) => { setLeadTime(Number(e.target.value)); setPhase("idle") }}
                 className="mt-2.5 h-1.5 w-full cursor-pointer appearance-none rounded-full bg-slate-700 accent-cyan-500"
               />
             </div>
           </div>
 
+          {/* Scenario A assumptions */}
           <div className="rounded-md border border-slate-700/50 bg-slate-900/50 p-4">
-            <h4 className="mb-3 text-[11px] font-medium uppercase tracking-wider text-slate-400">
-              Model Assumptions
-            </h4>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div>
-                <div className="mb-1.5 flex items-center justify-between text-[11px] font-medium uppercase tracking-wider text-slate-400">
-                  <span>GDP Impact per Day</span>
-                  <span className="font-mono text-cyan-400">{gdpRate.toFixed(3)}%</span>
-                </div>
-                <input
-                  type="range" min={0.01} max={0.1} step={0.005} value={gdpRate}
-                  onChange={(e) => { setGdpRate(Number(e.target.value)); setPhase("idle") }}
-                  className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-slate-700 accent-cyan-500"
-                />
-              </div>
-              <div>
-                <div className="mb-1.5 flex items-center justify-between text-[11px] font-medium uppercase tracking-wider text-slate-400">
-                  <span>Refinery Run-Rate Cut</span>
-                  <span className="font-mono text-cyan-400">{runCut}%</span>
-                </div>
-                <input
-                  type="range" min={0} max={50} step={1} value={runCut}
-                  onChange={(e) => { setRunCut(Number(e.target.value)); setPhase("idle") }}
-                  className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-slate-700 accent-cyan-500"
-                />
-              </div>
-              <div>
-                <div className="mb-1.5 flex items-center justify-between text-[11px] font-medium uppercase tracking-wider text-slate-400">
-                  <span>Industrial Priority Scheme</span>
-                  <span className="font-mono text-cyan-400">{indCut}%</span>
-                </div>
-                <input
-                  type="range" min={0} max={50} step={1} value={indCut}
-                  onChange={(e) => { setIndCut(Number(e.target.value)); setPhase("idle") }}
-                  className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-slate-700 accent-cyan-500"
-                />
-              </div>
-              <div>
-                <div className="mb-1.5 flex items-center justify-between text-[11px] font-medium uppercase tracking-wider text-slate-400">
-                  <span>Transport Fuel Rationing</span>
-                  <span className="font-mono text-cyan-400">{transCut}%</span>
-                </div>
-                <input
-                  type="range" min={0} max={50} step={1} value={transCut}
-                  onChange={(e) => { setTransCut(Number(e.target.value)); setPhase("idle") }}
-                  className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-slate-700 accent-cyan-500"
-                />
-              </div>
+            <div className="mb-3 flex items-center justify-between">
+              <h4 className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
+                {compareMode ? "Scenario A — Conservative Levers" : "Model Assumptions"}
+              </h4>
+              <button
+                type="button"
+                onClick={() => setCompareMode(!compareMode)}
+                className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider transition-colors ${
+                  compareMode
+                    ? "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30"
+                    : "border border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-300"
+                }`}
+              >
+                <GitCompare className="h-3 w-3" />
+                {compareMode ? "Exit Compare" : "Compare Scenarios"}
+              </button>
             </div>
-            
-            {(runCut + indCut + transCut > 60) && (
-              <div className="mt-4 rounded border border-orange-500/40 bg-orange-500/10 p-3 text-xs text-orange-300">
-                ⚠️ Combined demand cuts ({runCut + indCut + transCut}%) exceed typical operational limits.
-              </div>
-            )}
+            <SprAssumptionsForm
+              value={assumptions}
+              onChange={(next) => { setAssumptions(next); setPhase("idle") }}
+              hideHeader
+            />
           </div>
+
+          {/* Scenario B assumptions (compare mode only) */}
+          {compareMode && (
+            <div className="rounded-md border border-amber-500/30 bg-amber-900/10 p-4">
+              <h4 className="mb-3 text-[11px] font-medium uppercase tracking-wider text-amber-400">
+                Scenario B — Aggressive Levers
+              </h4>
+              <SprAssumptionsForm
+                value={assumptionsB}
+                onChange={(next) => { setAssumptionsB(next); setPhase("idle") }}
+                hideHeader
+              />
+            </div>
+          )}
 
           <button
             type="button"
@@ -166,7 +187,7 @@ export function SprOptimizer() {
           >
             {phase === "loading" ? (
               <><Loader className="h-4 w-4 animate-spin" /> Running Simulation...</>
-            ) : "Run SPR Simulation"}
+            ) : compareMode ? "Run Both Scenarios" : "Run SPR Simulation"}
           </button>
 
           {phase === "error" && (
@@ -175,7 +196,7 @@ export function SprOptimizer() {
 
           {result && (
             <div className={`space-y-4 ${isStale ? "opacity-50 transition-opacity" : "transition-opacity"}`}>
-              {/* KPI cards */}
+              {/* KPI cards (Scenario A) */}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <StatChip
                   label="Daily Shortfall"
@@ -203,16 +224,35 @@ export function SprOptimizer() {
                 {result.recommendation}
               </div>
 
+              {/* Compare KPIs for Scenario B */}
+              {compareMode && resultB && (
+                <div className="rounded-md border border-amber-500/30 bg-amber-900/10 p-3">
+                  <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-amber-400">
+                    Scenario B Outcomes
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <StatChip label="Shortfall" value={`${resultB.daily_shortfall_mbpd.toFixed(2)} mbpd`} accent="text-orange-400" />
+                    <StatChip label="Survival" value={`${resultB.survival_days.toFixed(1)} days`} accent="text-amber-400" />
+                    <StatChip label="Supply Gap" value={`${resultB.supply_gap_days.toFixed(1)} days`} accent={resultB.supply_gap_days > 0 ? "text-rose-500" : "text-emerald-400"} />
+                  </div>
+                </div>
+              )}
+
               {/* Burndown chart */}
               {burndown.length > 0 && (
                 <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-3">
                   <p className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-200">
                     <Gauge className="h-4 w-4 text-cyan-400" />
                     SPR Burn-Down Trajectory (% of capacity)
+                    {compareMode && resultB && (
+                      <span className="ml-2 text-[10px] font-normal text-slate-500">
+                        · Cyan = Scenario A · Amber = Scenario B
+                      </span>
+                    )}
                   </p>
                   <div className="h-72">
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={burndown} margin={{ top: 24, right: 16, left: -12, bottom: 0 }}>
+                      <LineChart data={mergedBurndown} margin={{ top: 24, right: 16, left: -12, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
                         <XAxis
                           dataKey="day"
@@ -223,14 +263,28 @@ export function SprOptimizer() {
                         />
                         <YAxis stroke="#64748b" fontSize={11} tickLine={false} domain={[0, 100]} />
                         <Tooltip content={chartTooltip} />
+                        {compareMode && resultB && <Legend />}
                         <ReferenceLine
                           x={Math.round(leadTime)}
                           stroke="#f43f5e"
                           strokeDasharray="4 4"
                           label={{ value: "Ships Arrive", fill: "#f43f5e", fontSize: 11, position: "insideTopLeft", offset: 10 }}
                         />
-                        <Line type="monotone" dataKey="baseline" name="Baseline"      stroke="#f43f5e" strokeWidth={2} dot={false} isAnimationActive={false} />
-                        <Line type="monotone" dataKey="managed"  name="With Demand Mgmt" stroke="#34d399" strokeWidth={2} dot={false} isAnimationActive={false} />
+                        <Line type="monotone" dataKey="baseline" name="Baseline (No Mgmt)" stroke="#f43f5e" strokeWidth={2} dot={false} isAnimationActive={false} />
+                        <Line type="monotone" dataKey="managed"  name={compareMode ? "Scenario A" : "With Demand Mgmt"} stroke="#34d399" strokeWidth={2} dot={false} isAnimationActive={false} />
+                        {compareMode && resultB && (
+                          <Line
+                            type="monotone"
+                            dataKey="managedB"
+                            name="Scenario B"
+                            stroke="#fbbf24"
+                            strokeWidth={2}
+                            strokeDasharray="5 3"
+                            dot={false}
+                            isAnimationActive={false}
+                            connectNulls={false}
+                          />
+                        )}
                       </LineChart>
                     </ResponsiveContainer>
                   </div>

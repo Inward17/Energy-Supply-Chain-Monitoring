@@ -1,6 +1,6 @@
 "use client"
 
-import { Globe, CircleDot, TrendingUp, Crosshair, Droplet, Swords } from "lucide-react"
+import { Globe, CircleDot, TrendingUp, Crosshair, Droplet, Swords, History } from "lucide-react"
 
 export const TABS = [
   { key: "threat", label: "Threat Map", icon: Globe },
@@ -9,6 +9,7 @@ export const TABS = [
   { key: "reroute", label: "Reroute Matrix", icon: Crosshair },
   { key: "spr", label: "SPR Optimizer", icon: Droplet },
   { key: "war", label: "War Room", icon: Swords },
+  { key: "historical", label: "Historical Validation", icon: History },
 ] as const
 
 export type TabKey = (typeof TABS)[number]["key"]

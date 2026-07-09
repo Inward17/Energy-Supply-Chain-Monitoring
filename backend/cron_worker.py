@@ -3,14 +3,12 @@ cron_worker.py
 ───────────────
 Background orchestration engine — the Shadow Cache heartbeat.
 
-Runs a sequential pipeline every CRON_INTERVAL_MINUTES (default: 15 min):
-  1. market_trawler  — yfinance price fetch
-  2. gdelt_collector — GDELT news headlines
-  3. ais_streamer    — AIS vessel snapshot
-  4. sentinel_agent  — Gemini batch scoring
-
-Designed to run in a dedicated terminal alongside `streamlit run app.py`.
-Uses the `schedule` library for a simple, dependency-free loop.
+Each pipeline step runs on its own independent schedule:
+  - market_trawler  / freight_trawler / sentinel_agent  — every 15 min (cheap yfinance)
+  - gdelt_collector — every 30 min   (GDELT has a soft rate limit)
+  - ais_streamer    — every 60 min   (2-min WebSocket window; avoid hammering)
+  - portwatch       — every 12 hours (slow-moving port traffic data)
+  - backtest jobs   — every 30 s     (user-triggered; must start quickly)
 
 Usage:
   python cron_worker.py            # Normal background run
@@ -124,9 +122,16 @@ def step_backtests() -> None:
     for job in jobs:
         logger.info(f"BACKTEST✓  Starting job {job['id']} for {job['event_name']}")
         try:
-            run_backtest(job["id"], job["event_name"])
+            import subprocess
+            import sys
+            # Launch in background so we don't block the cron cycle
+            subprocess.Popen([
+                sys.executable, "run_backtest.py", 
+                "--job-id", str(job["id"]), 
+                "--event-name", job["event_name"]
+            ])
         except Exception as exc:
-            logger.error(f"BACKTEST✗  Job {job['id']} failed: {exc}")
+            logger.error(f"BACKTEST✗  Job {job['id']} failed to start: {exc}")
 
 # ---------------------------------------------------------------------------
 # Full Cycle
@@ -145,10 +150,7 @@ def run_cycle() -> None:
     steps = [
         ("Market Trawler",  step_market),
         ("Freight Trawler", step_freight),
-        ("GDELT Collector", step_gdelt),
-        ("AIS Streamer",    step_ais),
         ("Sentinel Agent",  step_sentinel),
-        ("Backtest Runner", step_backtests),
     ]
 
     for name, fn in steps:
@@ -207,13 +209,25 @@ def main() -> None:
     run_cycle()
     step_portwatch()
 
+    # Cheap market data — every 15 min (yfinance, no rate limit concerns)
     schedule.every(interval).minutes.do(run_cycle)
+
+    # GDELT has a soft rate limit — every 30 min is safe
+    schedule.every(30).minutes.do(step_gdelt)
+
+    # AIS opens a 2-min WebSocket window — every 60 min to avoid hammering
+    schedule.every(60).minutes.do(step_ais)
+
+    # Port traffic is slow-moving — once every 12 hours is plenty
     schedule.every(12).hours.do(step_portwatch)
+
+    # Backtest jobs are user-triggered — must start within ~30 s of being queued
+    schedule.every(30).seconds.do(step_backtests)
 
     try:
         while True:
             schedule.run_pending()
-            time.sleep(30)
+            time.sleep(10)
     except KeyboardInterrupt:
         logger.info("Cron worker stopped by user.")
 

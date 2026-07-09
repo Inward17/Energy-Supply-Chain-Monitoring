@@ -11,6 +11,7 @@ import { MarketPulse } from "./tabs/market-pulse"
 import { RerouteMatrix } from "./tabs/reroute-matrix"
 import { SprOptimizer } from "./tabs/spr-optimizer"
 import { WarRoom } from "./tabs/war-room"
+import { HistoricalValidation } from "./tabs/historical-validation"
 
 export function Dashboard() {
   const [region, setRegion] = useState("All Regions")
@@ -67,6 +68,7 @@ export function Dashboard() {
           {tab === "reroute" && <RerouteMatrix />}
           {tab === "spr" && <SprOptimizer />}
           {tab === "war" && <WarRoom />}
+          {tab === "historical" && <HistoricalValidation />}
         </div>
       </main>
     </div>

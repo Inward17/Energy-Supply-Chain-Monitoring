@@ -95,3 +95,19 @@ BRENT_STATS_PERIOD: str = "35d"
 VLCC_DAILY_CHARTER_USD = 65_000
 VLCC_CARGO_BARRELS = 2_000_000
 VLCC_SPEED_KNOTS = 13.0
+
+# ---------------------------------------------------------------------------
+# Compliance / Sanctions Screening
+# ---------------------------------------------------------------------------
+
+#: Countries whose export terminals are currently subject to major sanctions
+#: regimes (US OFAC / EU / UN). Maintained as a static list; update when
+#: sanctions landscape changes. Used by fixer_agent when exclude_sanctioned=True.
+SANCTIONED_SOURCE_COUNTRIES: frozenset[str] = frozenset({
+    "Russia",
+    "Iran",
+    "Venezuela",
+    "North Korea",
+    "Syria",
+    "Libya",   # certain factions — include conservatively
+})

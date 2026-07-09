@@ -129,6 +129,7 @@ Active.ps1
 *.sqlite
 *.db
 *.lock
+cron_worker.lock
 
 # Node / Next.js (frontend)
 node_modules/

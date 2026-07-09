@@ -122,9 +122,11 @@ Analyse the following news headlines and return a JSON object with this exact sc
   "region": "<geographic region, e.g. Persian Gulf>",
   "disruption_type": "<one of: military_conflict | sanctions | weather | accident | piracy | protest | unknown>",
   "severity": <float 0.0 to 1.0>,
+  "severity_reasoning": "<A detailed, multi-factor breakdown explaining exactly why it received the specific score (e.g. 0.90), discussing market impact, geopolitical context, and severity drivers>",
   "affected_chokepoints": ["<chokepoint name>", ...],
+  "affected_producer_countries": ["<country name>", ...],
   "confidence": <float 0.0 to 1.0>,
-  "summary": "<1-2 sentence plain-English risk summary>"
+  "summary": "<3-4 sentence comprehensive plain-English risk summary containing core facts and potential implications>"
 }
 
 Return ONLY valid JSON. No markdown fences. No explanations outside the JSON.
@@ -191,7 +193,7 @@ def _call_gemini(prompt: str) -> dict[str, Any] | None:
 # Public Interface
 # ---------------------------------------------------------------------------
 
-def process_unprocessed_batch(batch_size: int = 5) -> int:
+def process_unprocessed_batch(batch_size: int = 10) -> int:
     """
     Fetch unprocessed news, score via Gemini, compute SDI, write risk events.
 
@@ -212,6 +214,7 @@ def process_unprocessed_batch(batch_size: int = 5) -> int:
         return 0
 
     headlines = [r["title"] for r in rows if r.get("title")]
+    source_urls = [r["url"] for r in rows if r.get("url")]
     news_ids  = [r["id"] for r in rows]
 
     if not headlines:
@@ -262,7 +265,7 @@ def process_unprocessed_batch(batch_size: int = 5) -> int:
         delta_p_freight=delta_p_freight,
     )
 
-    event = {**scored, "sdi_score": sdi}
+    event = {**scored, "sdi_score": sdi, "source_urls": source_urls}
     upsert_risk_event(event)
     mark_news_processed(news_ids)
 

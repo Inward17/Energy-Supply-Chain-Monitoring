@@ -10,7 +10,14 @@ import { Panel } from "../ui"
 import { fetchBacktest, fetchBacktestJobs, triggerBacktest, type BacktestResult, type BacktestJob } from "@/lib/api"
 import { Loader2 } from "lucide-react"
 
+const EVENTS = [
+  { id: "red_sea_attacks", name: "Red Sea Crisis (Nov 2023 - Jan 2024)" },
+  { id: "russia_ukraine_buildup", name: "Russia-Ukraine Buildup (Dec 2021 - Feb 2022)" },
+  { id: "israel_iran_war_2025", name: "Twelve-Day War (Israel-Iran 2025)" }
+]
+
 export function HistoricalValidation() {
+  const [selectedEventId, setSelectedEventId] = useState("red_sea_attacks")
   const [data, setData] = useState<BacktestResult | null>(null)
   const [jobs, setJobs] = useState<BacktestJob[]>([])
   const [loading, setLoading] = useState(true)
@@ -20,7 +27,7 @@ export function HistoricalValidation() {
   const loadData = () => {
     setLoading(true)
     Promise.all([
-      fetchBacktest("red_sea_attacks").catch(() => null),
+      fetchBacktest(selectedEventId).catch(() => null),
       fetchBacktestJobs().catch(() => [])
     ]).then(([res, j]) => {
       if (res && res.series && res.series.length > 0) {
@@ -58,12 +65,12 @@ export function HistoricalValidation() {
       }).catch(console.error)
     }, 5000)
     return () => clearInterval(interval)
-  }, [])
+  }, [selectedEventId])
 
   const handleRunBacktest = async () => {
     setTriggering(true)
     try {
-      await triggerBacktest("red_sea_attacks")
+      await triggerBacktest(selectedEventId)
       const updatedJobs = await fetchBacktestJobs()
       setJobs(updatedJobs)
     } catch (err) {
@@ -79,14 +86,25 @@ export function HistoricalValidation() {
       <Panel title="Backtest Job Manager" icon={<ShieldAlert className="h-4 w-4 text-slate-400" />}>
         <div className="p-4 flex flex-col gap-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-slate-200">Historical Scenarios</h3>
+            <div className="flex items-center gap-4">
+              <h3 className="text-sm font-semibold text-slate-200">Historical Scenarios</h3>
+              <select 
+                value={selectedEventId}
+                onChange={(e) => setSelectedEventId(e.target.value)}
+                className="bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              >
+                {EVENTS.map(ev => (
+                  <option key={ev.id} value={ev.id}>{ev.name}</option>
+                ))}
+              </select>
+            </div>
             <button 
               onClick={handleRunBacktest} 
               disabled={triggering || jobs.some(j => j.status === 'pending' || j.status === 'running')}
               className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-sm rounded transition-colors flex items-center gap-2"
             >
               {triggering && <Loader2 className="h-4 w-4 animate-spin" />}
-              Run Red Sea Backtest
+              Run Selected Backtest
             </button>
           </div>
           
@@ -107,14 +125,29 @@ export function HistoricalValidation() {
                       <td className="px-4 py-3 font-mono text-xs">{job.id}</td>
                       <td className="px-4 py-3">{job.event_name}</td>
                       <td className="px-4 py-3">
-                        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium
-                          ${job.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400' :
-                            job.status === 'failed' ? 'bg-rose-500/10 text-rose-400' :
-                            job.status === 'running' ? 'bg-cyan-500/10 text-cyan-400' :
-                            'bg-amber-500/10 text-amber-400'}`}>
-                          {job.status === 'running' && <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />}
-                          {job.status}
-                        </span>
+                        <div className="flex flex-col gap-1">
+                          <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium
+                            ${job.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400' :
+                              job.status === 'failed' ? 'bg-rose-500/10 text-rose-400' :
+                              job.status === 'running' ? 'bg-cyan-500/10 text-cyan-400' :
+                              'bg-amber-500/10 text-amber-400'}`}>
+                            {job.status === 'running' && <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />}
+                            {job.status === 'running' && job.progress_pct != null
+                              ? `running ${job.progress_pct}%`
+                              : job.status}
+                          </span>
+                          {job.status === 'running' && job.progress_note && (
+                            <span className="text-[10px] text-slate-500">processing {job.progress_note}</span>
+                          )}
+                          {job.status === 'running' && job.progress_pct != null && (
+                            <div className="h-1 w-full rounded-full bg-slate-800 overflow-hidden">
+                              <div
+                                className="h-1 rounded-full bg-cyan-500 transition-all duration-500"
+                                style={{ width: `${job.progress_pct}%` }}
+                              />
+                            </div>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-xs text-slate-500">
                         {new Date(job.created_at).toLocaleString()}
@@ -128,7 +161,7 @@ export function HistoricalValidation() {
         </div>
       </Panel>
 
-      <Panel title="Historical Validation: Red Sea Crisis (Nov 2023 - Jan 2024)" icon={<ShieldAlert className="h-4 w-4 text-emerald-400" />}>
+      <Panel title={`Historical Validation: ${EVENTS.find(e => e.id === selectedEventId)?.name}`} icon={<ShieldAlert className="h-4 w-4 text-emerald-400" />}>
         <div className="p-4">
           {loading ? (
             <div className="flex h-[400px] w-full items-center justify-center text-slate-500">Loading backtest data...</div>

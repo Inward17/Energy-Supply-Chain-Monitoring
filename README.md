@@ -236,6 +236,7 @@ The engine that keeps the Shadow Cache fresh. Runs in a separate terminal alongs
 Queries the **GDELT Doc 2.0 API** (free, no auth) for energy-relevant news.
 
 - **Query**: searches for `"Strait of Hormuz" OR "Suez Canal" OR "crude oil" OR "oil tanker"` etc.
+- **Credibility Tiering**: Prioritizes high-credibility global (60%) and industry (20%) sources (e.g., Reuters, Bloomberg, OilPrice).
 - **Deduplication**: inserts only new URLs using `ON CONFLICT DO NOTHING`
 - **Rate limiting**: GDELT throttles to ~1 req/sec; tenacity retries on 429 errors
 - **Output**: Raw article records stored in `news_cache` with `processed=False`
@@ -342,7 +343,7 @@ Uses **Gemini 2.5 Flash** to score batches of news headlines for geopolitical ri
 
 **Process:**
 1. Fetches up to 5 unprocessed headlines from `news_cache`
-2. Builds a structured JSON prompt requesting: `region`, `disruption_type`, `severity (0-1)`, `affected_chokepoints`, `confidence`, `summary`
+2. Builds a structured JSON prompt requesting: `region`, `disruption_type`, `severity (0-1)`, a multi-factor `severity_breakdown`, `affected_chokepoints`, `confidence`, and a comprehensive 3-4 sentence `summary`.
 3. Validates the response — filters `affected_chokepoints` to only recognised names from `CHOKEPOINTS_SET`
 4. Enriches the event with a **Supply Disruption Index (SDI)** score using live Brent pricing
 5. Writes the scored event to `risk_events`

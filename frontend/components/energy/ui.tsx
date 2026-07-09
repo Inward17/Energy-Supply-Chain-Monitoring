@@ -67,8 +67,8 @@ export function StatChip({
 }) {
   return (
     <div className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2.5">
-      <p className="text-[10px] uppercase tracking-widest text-slate-500">{label}</p>
-      <p className={cn("mt-1 font-mono text-lg font-semibold", accent)}>{value}</p>
+      <div className="text-[10px] uppercase tracking-widest text-slate-500">{label}</div>
+      <div className={cn("mt-1 font-mono text-lg font-semibold", accent)}>{value}</div>
     </div>
   )
 }

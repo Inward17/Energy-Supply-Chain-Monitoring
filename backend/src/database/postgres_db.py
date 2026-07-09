@@ -135,9 +135,11 @@ def init_schema() -> None:
             disruption_type      TEXT,
             severity             DOUBLE PRECISION,
             affected_chokepoints TEXT[],
+            affected_producer_countries TEXT[],
             confidence           DOUBLE PRECISION,
             summary              TEXT,
             sdi_score            DOUBLE PRECISION,
+            source_urls          TEXT[],
             created_at           TIMESTAMPTZ DEFAULT NOW()
         )
         """,
@@ -149,6 +151,7 @@ def init_schema() -> None:
             disruption_type      TEXT,
             severity             DOUBLE PRECISION,
             affected_chokepoints TEXT[],
+            affected_producer_countries TEXT[],
             confidence           DOUBLE PRECISION,
             summary              TEXT,
             sdi_score            DOUBLE PRECISION,
@@ -157,15 +160,28 @@ def init_schema() -> None:
         """,
         """
         CREATE TABLE IF NOT EXISTS backtest_jobs (
-            id          SERIAL PRIMARY KEY,
-            event_name  TEXT NOT NULL,
-            status      TEXT DEFAULT 'pending',
-            start_time  TIMESTAMPTZ,
-            end_time    TIMESTAMPTZ,
-            created_at  TIMESTAMPTZ DEFAULT NOW(),
-            error_log   TEXT
+            id            SERIAL PRIMARY KEY,
+            event_name    TEXT NOT NULL,
+            status        TEXT DEFAULT 'pending',
+            progress_pct  INT DEFAULT 0,
+            progress_note TEXT,
+            start_time    TIMESTAMPTZ,
+            end_time      TIMESTAMPTZ,
+            created_at    TIMESTAMPTZ DEFAULT NOW(),
+            error_log     TEXT
         )
         """,
+        # Safely add progress columns to existing DBs that predate this migration
+        "ALTER TABLE backtest_jobs ADD COLUMN IF NOT EXISTS progress_pct INT DEFAULT 0",
+        "ALTER TABLE backtest_jobs ADD COLUMN IF NOT EXISTS progress_note TEXT",
+        # Safely add source_urls column to existing DBs
+        "ALTER TABLE risk_events ADD COLUMN IF NOT EXISTS source_urls TEXT[]",
+        # Safely add producer countries to existing DBs
+        "ALTER TABLE risk_events ADD COLUMN IF NOT EXISTS affected_producer_countries TEXT[]",
+        "ALTER TABLE risk_events_backtest ADD COLUMN IF NOT EXISTS affected_producer_countries TEXT[]",
+        # Safely add severity reasoning to existing DBs
+        "ALTER TABLE risk_events ADD COLUMN IF NOT EXISTS severity_reasoning TEXT",
+        "ALTER TABLE risk_events_backtest ADD COLUMN IF NOT EXISTS severity_reasoning TEXT",
         "CREATE INDEX IF NOT EXISTS idx_news_processed ON news_cache (processed, fetched_at DESC)",
         "CREATE INDEX IF NOT EXISTS idx_vessel_region  ON vessel_telemetry (region, recorded_at DESC)",
         "CREATE INDEX IF NOT EXISTS idx_prices_ticker  ON market_prices (ticker, trade_date DESC)",
@@ -428,31 +444,31 @@ def fetch_latest_prices(
 # ---------------------------------------------------------------------------
 
 def upsert_risk_event(event: dict[str, Any]) -> None:
-    """Insert a scored risk event from the Sentinel Agent."""
-    stmt = text(
-        """
-        INSERT INTO risk_events
-            (region, disruption_type, severity, affected_chokepoints,
-             confidence, summary, sdi_score, created_at)
-        VALUES
-            (:region, :disruption_type, :severity, :affected_chokepoints,
-             :confidence, :summary, :sdi_score, :created_at)
-        """
-    )
+    """Store a Gemini-scored risk event, inserting array parameters via dictionaries."""
     try:
         with get_conn() as conn:
+            stmt = text("""
+                INSERT INTO risk_events
+                    (region, disruption_type, severity, affected_chokepoints, affected_producer_countries,
+                     confidence, summary, sdi_score, source_urls, severity_reasoning)
+                VALUES
+                    (:region, :disruption_type, :severity, :affected_chokepoints, :affected_producer_countries,
+                     :confidence, :summary, :sdi_score, :source_urls, :severity_reasoning)
+            """)
             conn.execute(
                 stmt,
                 {
                     "region":               event.get("region", "Unknown"),
                     "disruption_type":      event.get("disruption_type", "unknown"),
-                    "severity":             event.get("severity", 0.0),
+                    "severity":             event.get("severity", 0.1),
                     "affected_chokepoints": event.get("affected_chokepoints", []),
-                    "confidence":           event.get("confidence", 0.0),
+                    "affected_producer_countries": event.get("affected_producer_countries", []),
+                    "confidence":           event.get("confidence", 0.5),
                     "summary":              event.get("summary", ""),
                     "sdi_score":            event.get("sdi_score", 0.0),
-                    "created_at":           datetime.now(timezone.utc),
-                },
+                    "source_urls":          event.get("source_urls", []),
+                    "severity_reasoning":   event.get("severity_reasoning", ""),
+                }
             )
     except Exception as exc:
         logger.error("upsert_risk_event failed: %s", exc)
@@ -464,8 +480,8 @@ def fetch_risk_events(limit: int = 50) -> list[dict[str, Any]]:
         with get_conn() as conn:
             rows = conn.execute(
                 text(
-                    "SELECT id, region, disruption_type, severity, affected_chokepoints, "
-                    "confidence, summary, sdi_score, created_at "
+                    "SELECT id, region, disruption_type, severity, affected_chokepoints, affected_producer_countries, "
+                    "confidence, summary, sdi_score, source_urls, severity_reasoning, created_at "
                     "FROM risk_events ORDER BY created_at DESC LIMIT :lim"
                 ),
                 {"lim": limit},
@@ -475,6 +491,22 @@ def fetch_risk_events(limit: int = 50) -> list[dict[str, Any]]:
         logger.error("fetch_risk_events failed: %s", exc)
         return []
 
+def fetch_risk_event(event_id: int) -> dict[str, Any] | None:
+    """Return a single risk event by ID."""
+    try:
+        with get_conn() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT id, region, disruption_type, severity, affected_chokepoints, affected_producer_countries, "
+                    "confidence, summary, sdi_score, source_urls, severity_reasoning, created_at "
+                    "FROM risk_events WHERE id = :event_id"
+                ),
+                {"event_id": event_id},
+            ).mappings().first()
+            return dict(row) if row else None
+    except Exception as exc:
+        logger.error("fetch_risk_event failed: %s", exc)
+        return None
 
 def fetch_latest_sdi() -> float:
     """Return the most recent SDI score for the dashboard summary metric."""
@@ -498,11 +530,11 @@ def upsert_risk_event_backtest(event: dict[str, Any]) -> None:
     stmt = text(
         """
         INSERT INTO risk_events_backtest
-            (event_name, region, disruption_type, severity, affected_chokepoints,
-             confidence, summary, sdi_score, created_at)
+            (event_name, region, disruption_type, severity, affected_chokepoints, affected_producer_countries,
+             confidence, summary, sdi_score, severity_reasoning, created_at)
         VALUES
-            (:event_name, :region, :disruption_type, :severity, :affected_chokepoints,
-             :confidence, :summary, :sdi_score, :created_at)
+            (:event_name, :region, :disruption_type, :severity, :affected_chokepoints, :affected_producer_countries,
+             :confidence, :summary, :sdi_score, :severity_reasoning, :created_at)
         """
     )
     try:
@@ -515,9 +547,11 @@ def upsert_risk_event_backtest(event: dict[str, Any]) -> None:
                     "disruption_type":      event.get("disruption_type", "unknown"),
                     "severity":             event.get("severity", 0.0),
                     "affected_chokepoints": event.get("affected_chokepoints", []),
+                    "affected_producer_countries": event.get("affected_producer_countries", []),
                     "confidence":           event.get("confidence", 0.0),
                     "summary":              event.get("summary", ""),
                     "sdi_score":            event.get("sdi_score", 0.0),
+                    "severity_reasoning":   event.get("severity_reasoning", ""),
                     "created_at":           event.get("created_at", datetime.now(timezone.utc)),
                 },
             )
@@ -531,8 +565,8 @@ def fetch_risk_events_backtest(event_name: str) -> list[dict[str, Any]]:
         with get_conn() as conn:
             rows = conn.execute(
                 text(
-                    "SELECT id, event_name, region, disruption_type, severity, affected_chokepoints, "
-                    "confidence, summary, sdi_score, created_at "
+                    "SELECT id, event_name, region, disruption_type, severity, affected_chokepoints, affected_producer_countries, "
+                    "confidence, summary, sdi_score, severity_reasoning, created_at "
                     "FROM risk_events_backtest WHERE event_name = :event_name ORDER BY created_at ASC"
                 ),
                 {"event_name": event_name},
@@ -582,12 +616,23 @@ def update_backtest_job(job_id: int, status: str, error_log: str | None = None) 
     except Exception as exc:
         logger.error("update_backtest_job failed: %s", exc)
 
+def update_backtest_job_progress(job_id: int, progress_pct: int, current_date_str: str) -> None:
+    """Update the progress percentage and current date being processed for a running backtest job."""
+    try:
+        with get_conn() as conn:
+            conn.execute(
+                text("UPDATE backtest_jobs SET progress_pct = :pct, progress_note = :note WHERE id = :id"),
+                {"pct": progress_pct, "note": current_date_str, "id": job_id}
+            )
+    except Exception as exc:
+        logger.error("update_backtest_job_progress failed: %s", exc)
+
 def fetch_pending_backtest_jobs() -> list[dict[str, Any]]:
     """Fetch all pending backtest jobs."""
     try:
         with get_conn() as conn:
             rows = conn.execute(
-                text("SELECT id, event_name, status, start_time, end_time, created_at, error_log FROM backtest_jobs WHERE status = 'pending' ORDER BY created_at ASC")
+                text("SELECT id, event_name, status, progress_pct, progress_note, start_time, end_time, created_at, error_log FROM backtest_jobs WHERE status = 'pending' ORDER BY created_at ASC")
             ).mappings().all()
             return [dict(r) for r in rows]
     except Exception as exc:
@@ -599,7 +644,7 @@ def fetch_all_backtest_jobs() -> list[dict[str, Any]]:
     try:
         with get_conn() as conn:
             rows = conn.execute(
-                text("SELECT id, event_name, status, start_time, end_time, created_at, error_log FROM backtest_jobs ORDER BY created_at DESC LIMIT 50")
+                text("SELECT id, event_name, status, progress_pct, progress_note, start_time, end_time, created_at, error_log FROM backtest_jobs ORDER BY created_at DESC LIMIT 50")
             ).mappings().all()
             return [dict(r) for r in rows]
     except Exception as exc:

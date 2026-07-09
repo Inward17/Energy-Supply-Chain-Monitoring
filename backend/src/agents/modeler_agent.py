@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime, timezone
 from typing import Any
 
 from src.database.postgres_db import (
@@ -34,6 +35,7 @@ from src.utils.metrics import (
     estimate_price_impact,
     compute_resilience_score,
     flow_weighted_risk,
+    _W1, _W2, _W3, _W4,
 )
 from src.utils.constants import MODELER_BASELINE_RISK, TANKER_SHIP_TYPES
 
@@ -82,6 +84,9 @@ def compute_current_sdi() -> dict[str, Any]:
     max_event = max(events, key=lambda e: float(e.get("severity", 0)), default=None)
     p_risk = float(max_event.get("severity", 0)) if max_event else 0.0
     confidence_for_band = float(max_event.get("confidence", 0.5)) if max_event else 0.3
+    updated_at = max_event.get("created_at") if max_event and max_event.get("created_at") else datetime.now(timezone.utc)
+    if not isinstance(updated_at, str):
+        updated_at = updated_at.isoformat()
 
     top_event = events[0] if events else {}
     top_region = top_event.get("region", "—")
@@ -151,6 +156,12 @@ def compute_current_sdi() -> dict[str, Any]:
         "active_alerts":    len([e for e in events if float(e.get("severity", 0)) > 0.5]),
         "gemini_configured": bool(os.getenv("GEMINI_API_KEY", "")),
         "ais_configured":    bool(os.getenv("AISSTREAM_API_KEY", "")),
+        "w1":               _W1,
+        "w2":               _W2,
+        "w3":               _W3,
+        "w4":               _W4,
+        "confidence":       confidence_for_band,
+        "updated_at":       updated_at,
     }
 
 
@@ -206,7 +217,56 @@ def compute_chokepoint_risk_matrix() -> list[dict[str, Any]]:
             "price_impact_usd": estimate_price_impact(risk, flow_mb),
         })
 
-    return sorted(matrix, key=lambda x: x["sdi_contribution"], reverse=True)
+    return sorted(matrix, key=lambda x: (x["risk_score"], x["flow_mb_day"]), reverse=True)
+
+
+# ---------------------------------------------------------------------------
+# Per-Producer Risk Summary
+# ---------------------------------------------------------------------------
+
+def compute_producer_country_risk_matrix() -> list[dict[str, Any]]:
+    """
+    Build a per-producer risk matrix for the Reroute Matrix tab.
+    Aggregates risk score for producer nations using the same max-severity logic as chokepoints.
+
+    Returns:
+        List of dicts: name, risk_score.
+    """
+    events = fetch_risk_events(limit=20)
+    
+    producer_risk: dict[str, float] = {}
+    for event in events:
+        countries = event.get("affected_producer_countries") or []
+        sev = float(event.get("severity", 0))
+        for country in countries:
+            producer_risk[country] = max(producer_risk.get(country, 0.0), sev)
+            
+    # Fetch baseline of all known producers from the knowledge graph
+    common_producers = []
+    try:
+        from src.database.neo4j_graph import get_driver
+        driver = get_driver()
+        if driver:
+            with driver.session() as session:
+                res = session.run("MATCH (p:ExportPort) RETURN DISTINCT p.country AS c")
+                common_producers = [r["c"] for r in res if r["c"]]
+    except Exception:
+        pass
+        
+    if not common_producers:
+        common_producers = ["Russia", "Saudi Arabia", "Iran", "Iraq", "UAE", "Kuwait", "Nigeria", "Venezuela"]
+    for cp in common_producers:
+        if cp not in producer_risk:
+            producer_risk[cp] = MODELER_BASELINE_RISK
+
+    matrix = []
+    for country, risk in producer_risk.items():
+        matrix.append({
+            "name": country,
+            "risk_score": round(risk, 3)
+        })
+        
+    return sorted(matrix, key=lambda x: x["risk_score"], reverse=True)
 
 
 # ---------------------------------------------------------------------------
