@@ -297,6 +297,8 @@ def get_producer_matrix() -> list[dict[str, Any]]:
 def get_sdi_timeline() -> list[dict[str, Any]]:
     """
     Return recent SDI snapshots as a time-series for the SDI timeline chart.
+    Appends the current live SDI value as the final point so the chart
+    always matches the KPI header score.
     """
     try:
         events = fetch_risk_events(limit=20)
@@ -304,7 +306,6 @@ def get_sdi_timeline() -> list[dict[str, Any]]:
         for ev in reversed(events):
             scored_at = ev.get("created_at", "")
             sdi_val = float(ev.get("sdi_score", 0) or 0)
-            # Include confidence metrics
             p_risk = float(ev.get("severity", 0) or 0)
             conf = float(ev.get("confidence", 1.0) or 1.0)
             sdi_component = p_risk * 50.0
@@ -316,6 +317,22 @@ def get_sdi_timeline() -> list[dict[str, Any]]:
                 "confidence_low":   round(max(0.0, sdi_val - margin), 1),
                 "confidence_high":  round(min(100.0, sdi_val + margin), 1),
             })
+
+        # Append current live SDI so chart tail always matches KPI header
+        try:
+            live = compute_current_sdi()
+            live_sdi = round(live["sdi_score"], 1)
+            live_margin = round(live["sdi_score"] * (1 - live.get("confidence", 0.5)), 1)
+            from datetime import datetime, timezone as _tz
+            timeline.append({
+                "scored_at":      datetime.now(_tz.utc).isoformat(),
+                "sdi_score":      live_sdi,
+                "confidence_low":  round(max(0.0, live_sdi - live_margin), 1),
+                "confidence_high": round(min(100.0, live_sdi + live_margin), 1),
+            })
+        except Exception:
+            pass  # non-fatal if live compute fails
+
         return timeline
     except Exception as exc:
         logger.error("get_sdi_timeline failed: %s", exc)
@@ -357,7 +374,7 @@ def get_market_prices() -> dict[str, Any]:
                     "volume":     int(latest.get("volume", 0) or 0),
                     "series":     [
                         {
-                            "d":     f"Day {i+1}",
+                            "d":     str(r.get("trade_date", ""))[:10],
                             "price": round(float(r.get("price_close", 0) or 0), 2),
                             "ma":    round(float(r.get("price_close", 0) or 0), 2),
                         }

@@ -582,9 +582,18 @@ def fetch_risk_events_backtest(event_name: str) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 def create_backtest_job(event_name: str) -> int | None:
-    """Create a new backtest job and return its ID."""
+    """Create a new backtest job only if one doesn't already exist for this event_name.
+    Returns the existing job ID if one exists, or the new one if created.
+    """
     try:
         with get_conn() as conn:
+            # Return existing job if already present (avoid duplicates)
+            existing = conn.execute(
+                text("SELECT id FROM backtest_jobs WHERE event_name = :event_name ORDER BY id DESC LIMIT 1"),
+                {"event_name": event_name}
+            ).fetchone()
+            if existing:
+                return existing[0]
             result = conn.execute(
                 text("INSERT INTO backtest_jobs (event_name, status) VALUES (:event_name, 'pending') RETURNING id"),
                 {"event_name": event_name}

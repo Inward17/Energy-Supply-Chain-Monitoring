@@ -116,7 +116,19 @@ export function MarketPulse() {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                <XAxis dataKey="d" stroke="#64748b" fontSize={11} tickLine={false} />
+                <XAxis
+                  dataKey="d"
+                  stroke="#64748b"
+                  fontSize={11}
+                  tickLine={false}
+                  tickFormatter={(val: string) => {
+                    try {
+                      const d = new Date(val)
+                      return d.toLocaleDateString("en-US", { month: "short", day: "numeric" })
+                    } catch { return val }
+                  }}
+                  interval={Math.ceil((active.series?.length ?? 60) / 8)}
+                />
                 <YAxis
                   yAxisId="price"
                   stroke="#64748b"

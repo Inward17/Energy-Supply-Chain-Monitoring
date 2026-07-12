@@ -305,7 +305,7 @@ export function WarRoom() {
               <BigKpi
                 label="GDP Impact"
                 value={spr!.gdp_impact}
-                unit="%"
+                unit="of India GDP"
                 accent={gapSafe ? "text-emerald-400" : "text-rose-400"}
               />
             </div>

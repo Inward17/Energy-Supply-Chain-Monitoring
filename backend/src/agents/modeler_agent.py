@@ -227,19 +227,57 @@ def compute_chokepoint_risk_matrix() -> list[dict[str, Any]]:
 def compute_producer_country_risk_matrix() -> list[dict[str, Any]]:
     """
     Build a per-producer risk matrix for the Reroute Matrix tab.
-    Aggregates risk score for producer nations using the same max-severity logic as chokepoints.
+    Aggregates risk score for producer nations using a time-decayed weighted
+    average across all recent events — so countries affected by multiple
+    events get continuously-varying scores, not identical max-severity buckets.
 
     Returns:
         List of dicts: name, risk_score.
     """
-    events = fetch_risk_events(limit=20)
+    from datetime import datetime, timezone, timedelta
     
-    producer_risk: dict[str, float] = {}
+    events = fetch_risk_events(limit=50)
+    now = datetime.now(timezone.utc)
+    
+    # accumulate (weighted_sum, total_weight) per country
+    producer_weighted: dict[str, list[float]] = {}  # country -> [weighted_sev_sum, weight_sum]
+    
     for event in events:
         countries = event.get("affected_producer_countries") or []
         sev = float(event.get("severity", 0))
+        
+        # Time-decay: events in the last 7 days get full weight, older events decay exponentially
+        created_at = event.get("created_at")
+        if created_at:
+            if isinstance(created_at, str):
+                try:
+                    from datetime import datetime as _dt
+                    # Parse ISO string
+                    created_at = _dt.fromisoformat(created_at.replace("Z", "+00:00"))
+                except Exception:
+                    created_at = None
+        
+        if created_at and hasattr(created_at, "tzinfo"):
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            age_days = max(0.0, (now - created_at).total_seconds() / 86400.0)
+        else:
+            age_days = 3.0  # assume 3 days old if unknown
+
+        # Exponential decay: half-life = 14 days
+        decay_weight = 0.5 ** (age_days / 14.0)
+        
         for country in countries:
-            producer_risk[country] = max(producer_risk.get(country, 0.0), sev)
+            if country not in producer_weighted:
+                producer_weighted[country] = [0.0, 0.0]
+            producer_weighted[country][0] += sev * decay_weight
+            producer_weighted[country][1] += decay_weight
+
+    # Compute final scores as weighted averages
+    producer_risk: dict[str, float] = {}
+    for country, (w_sum, total_w) in producer_weighted.items():
+        if total_w > 0:
+            producer_risk[country] = w_sum / total_w
             
     # Fetch baseline of all known producers from the knowledge graph
     common_producers = []
