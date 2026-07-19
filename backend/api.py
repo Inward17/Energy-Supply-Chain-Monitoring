@@ -18,9 +18,11 @@ Terminals:
 
 from __future__ import annotations
 
+import json
 import logging
+import pandas as pd
 from typing import Any
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -35,7 +37,13 @@ from src.agents.fixer_agent import (
 )
 from src.agents.spr_agent import calculate_spr_impact
 from src.agents.briefing_agent import generate_emergency_brief
-from src.agents.modeler_agent import compute_current_sdi, compute_chokepoint_risk_matrix, compute_producer_country_risk_matrix
+from src.agents.modeler_agent import (
+    compute_current_sdi,
+    compute_chokepoint_risk_matrix,
+    compute_producer_country_risk_matrix,
+    explain_chokepoint_risk,
+    explain_producer_risk,
+)
 from src.database.postgres_db import (
     init_schema,
     fetch_unprocessed_news,
@@ -44,12 +52,19 @@ from src.database.postgres_db import (
     fetch_risk_events,
     fetch_risk_event,
     fetch_latest_sdi,
+    fetch_sdi_snapshots,
+    upsert_sdi_snapshot,
     fetch_risk_events_backtest,
     create_backtest_job,
     update_backtest_job,
     fetch_all_backtest_jobs
 )
 from src.database.neo4j_graph import get_driver
+from src.utils.constants import (
+    COUNTRY_ALIASES,
+    PRODUCER_TO_CHOKEPOINTS,
+    canonical_country_name,
+)
 
 from dotenv import load_dotenv
 load_dotenv(override=True)
@@ -83,6 +98,7 @@ def startup():
     """Ensure Postgres schema and Neo4j knowledge graph exist before the first request."""
     try:
         init_schema()
+        upsert_sdi_snapshot(compute_current_sdi())
         logger.info("Database schema verified on startup.")
     except Exception as exc:
         logger.warning("Could not verify DB schema on startup: %s", exc)
@@ -107,6 +123,7 @@ def get_live_metrics() -> dict[str, Any]:
         sdi_data = compute_current_sdi()
         return {
             "sdi_score":        sdi_data["sdi_score"],
+            "sdi_band":         sdi_data.get("sdi_band", "LOW"),
             "confidence_low":   sdi_data["confidence_low"],
             "confidence_high":  sdi_data["confidence_high"],
             "p_risk":           sdi_data["p_risk"],
@@ -127,6 +144,16 @@ def get_live_metrics() -> dict[str, Any]:
             "w3":               sdi_data.get("w3", 0.15),
             "w4":               sdi_data.get("w4", 0.20),
             "confidence":       sdi_data.get("confidence", 0.5),
+            "ais_status":       sdi_data.get("ais_status", "unavailable"),
+            "ais_type_coverage": sdi_data.get("ais_type_coverage", 0.0),
+            # Per-region live vs baseline tanker share, so the vessel term can be
+            # audited rather than taken on trust.
+            "vessel_density_detail": sdi_data.get("vessel_density_detail", {}),
+            "market_status":    sdi_data.get("market_status", "unavailable"),
+            "event_source_at":  sdi_data.get("event_source_at"),
+            "vessel_source_at": sdi_data.get("vessel_source_at"),
+            "market_source_date": sdi_data.get("market_source_date"),
+            "computed_at":      sdi_data.get("computed_at"),
             "updated_at":       sdi_data.get("updated_at"),
         }
     except ValueError as exc:
@@ -161,9 +188,8 @@ def get_risk_events(limit: int = 10) -> list[dict[str, Any]]:
             cps = e.get("affected_chokepoints") or []
             # Postgres may return JSON string; normalise to list
             if isinstance(cps, str):
-                import json as _json
                 try:
-                    cps = _json.loads(cps)
+                    cps = json.loads(cps)
                 except Exception:
                     cps = []
 
@@ -175,10 +201,17 @@ def get_risk_events(limit: int = 10) -> list[dict[str, Any]]:
                 "severity_label":   label,
                 "severity_reasoning": e.get("severity_reasoning", ""),
                 "affected_chokepoints": cps,
-                "affected_producer_countries": e.get("affected_producer_countries", []),
+                "affected_producer_countries": list(dict.fromkeys(
+                    canonical_country_name(country)
+                    for country in (e.get("affected_producer_countries") or [])
+                )),
+                "directly_affected_producer_countries": e.get(
+                    "directly_affected_producer_countries", []
+                ) or [],
                 "summary":          e.get("summary", ""),
                 "sdi_score":        float(e.get("sdi_score", 0) or 0),
                 "scored_at":        str(e.get("created_at", "")),
+                "source_fetched_at": str(e.get("source_fetched_at", "")),
                 "source_urls":      e.get("source_urls", []),
             })
         return result
@@ -209,19 +242,23 @@ def get_risk_event_detail(event_id: int) -> dict[str, Any]:
 
         cps = e.get("affected_chokepoints") or []
         if isinstance(cps, str):
-            import json as _json
             try:
-                cps = _json.loads(cps)
+                cps = json.loads(cps)
             except Exception:
                 cps = []
                 
         prods = e.get("affected_producer_countries") or []
         if isinstance(prods, str):
-            import json as _json
             try:
-                prods = _json.loads(prods)
+                prods = json.loads(prods)
             except Exception:
                 prods = []
+        prods = list(dict.fromkeys(canonical_country_name(p) for p in prods))
+        graph_prods = set(prods)
+        graph_prods.update(
+            alias for alias, canonical in COUNTRY_ALIASES.items()
+            if canonical in prods
+        )
 
         affected_grades = []
         driver = get_driver()
@@ -236,8 +273,18 @@ def get_risk_event_detail(event_id: int) -> dict[str, Any]:
                 WHERE c.name IN $chokepoints
                 RETURN DISTINCT g.name AS grade
                 """
-                res = session.run(query, countries=prods, chokepoints=cps)
+                res = session.run(query, countries=list(graph_prods), chokepoints=cps)
                 affected_grades = [r["grade"] for r in res]
+
+        inferred_cps = []
+        if not cps and prods:
+            for p in prods:
+                for mapped_country, mapped_chokepoints in PRODUCER_TO_CHOKEPOINTS.items():
+                    if canonical_country_name(mapped_country) != p:
+                        continue
+                    for cp in mapped_chokepoints:
+                        if cp not in inferred_cps:
+                            inferred_cps.append(cp)
 
         return {
             "id":               e.get("id", 0),
@@ -247,11 +294,16 @@ def get_risk_event_detail(event_id: int) -> dict[str, Any]:
             "severity_label":   label,
             "severity_reasoning": e.get("severity_reasoning", ""),
             "affected_chokepoints": cps,
+            "inferred_chokepoints": inferred_cps,
             "affected_producer_countries": prods,
+            "directly_affected_producer_countries": e.get(
+                "directly_affected_producer_countries", []
+            ) or [],
             "affected_grades":  affected_grades,
             "summary":          e.get("summary", ""),
             "sdi_score":        float(e.get("sdi_score", 0) or 0),
             "scored_at":        str(e.get("created_at", "")),
+            "source_fetched_at": str(e.get("source_fetched_at", "")),
             "source_urls":      e.get("source_urls", []),
         }
     except HTTPException:
@@ -277,6 +329,36 @@ def get_chokepoint_matrix() -> list[dict[str, Any]]:
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+@app.get("/api/risk/chokepoints/{name}")
+def get_chokepoint_detail(name: str) -> dict[str, Any]:
+    """Score attribution for one chokepoint — which events drove it and how."""
+    try:
+        detail = explain_chokepoint_risk(name)
+        if not detail:
+            raise HTTPException(status_code=404, detail="Chokepoint not tracked")
+        return detail
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("get_chokepoint_detail failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/risk/producers/{name}")
+def get_producer_detail(name: str) -> dict[str, Any]:
+    """Score attribution for one producer country."""
+    try:
+        detail = explain_producer_risk(name)
+        if not detail:
+            raise HTTPException(status_code=404, detail="Producer not tracked")
+        return detail
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("get_producer_detail failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @app.get("/api/risk/producers")
 def get_producer_matrix() -> list[dict[str, Any]]:
     """
@@ -295,49 +377,51 @@ def get_producer_matrix() -> list[dict[str, Any]]:
 
 @app.get("/api/risk/sdi-timeline")
 def get_sdi_timeline() -> list[dict[str, Any]]:
-    """
-    Return recent SDI snapshots as a time-series for the SDI timeline chart.
-    Appends the current live SDI value as the final point so the chart
-    always matches the KPI header score.
-    """
+    """Return persisted canonical SDI computations for the timeline chart."""
     try:
-        events = fetch_risk_events(limit=20)
-        timeline = []
-        for ev in reversed(events):
-            scored_at = ev.get("created_at", "")
-            sdi_val = float(ev.get("sdi_score", 0) or 0)
-            p_risk = float(ev.get("severity", 0) or 0)
-            conf = float(ev.get("confidence", 1.0) or 1.0)
-            sdi_component = p_risk * 50.0
-            margin = sdi_component * (1.0 - conf)
-            
-            timeline.append({
-                "scored_at":        str(ev.get("created_at", "")),
-                "sdi_score":        round(sdi_val, 1),
-                "confidence_low":   round(max(0.0, sdi_val - margin), 1),
-                "confidence_high":  round(min(100.0, sdi_val + margin), 1),
-            })
-
-        # Append current live SDI so chart tail always matches KPI header
-        try:
+        snapshots = fetch_sdi_snapshots(limit=50)
+        if not snapshots:
+            # Startup normally persists a first point. This local-cache-only
+            # fallback keeps a fresh installation usable if persistence failed.
             live = compute_current_sdi()
-            live_sdi = round(live["sdi_score"], 1)
-            live_margin = round(live["sdi_score"] * (1 - live.get("confidence", 0.5)), 1)
-            from datetime import datetime, timezone as _tz
-            timeline.append({
-                "scored_at":      datetime.now(_tz.utc).isoformat(),
-                "sdi_score":      live_sdi,
-                "confidence_low":  round(max(0.0, live_sdi - live_margin), 1),
-                "confidence_high": round(min(100.0, live_sdi + live_margin), 1),
-            })
-        except Exception:
-            pass  # non-fatal if live compute fails
+            return [{
+                "scored_at": live["computed_at"],
+                "sdi_score": live["sdi_score"],
+                "confidence_low": live["confidence_low"],
+                "confidence_high": live["confidence_high"],
+                "ais_status": live.get("ais_status"),
+                "market_status": live.get("market_status"),
+            }]
 
-        return timeline
+        return [
+            {
+                "scored_at": str(snapshot.get("computed_at", "")),
+                "sdi_score": round(float(snapshot.get("sdi_score", 0.0)), 1),
+                "confidence_low": round(
+                    float(snapshot.get("confidence_low", 0.0) or 0.0),
+                    1,
+                ),
+                "confidence_high": round(
+                    float(snapshot.get("confidence_high", 0.0) or 0.0),
+                    1,
+                ),
+                "p_risk": float(snapshot.get("p_risk", 0.0) or 0.0),
+                "delta_d": float(snapshot.get("delta_d", 0.0) or 0.0),
+                "delta_p": float(snapshot.get("delta_p", 0.0) or 0.0),
+                "delta_f": float(snapshot.get("delta_f", 0.0) or 0.0),
+                "ais_status": snapshot.get("ais_status"),
+                "market_status": snapshot.get("market_status"),
+                "event_source_at": str(snapshot.get("event_source_at") or ""),
+                "vessel_source_at": str(snapshot.get("vessel_source_at") or ""),
+                "market_source_date": str(
+                    snapshot.get("market_source_date") or ""
+                ),
+            }
+            for snapshot in reversed(snapshots)
+        ]
     except Exception as exc:
         logger.error("get_sdi_timeline failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
-
 
 @app.get("/api/market/prices")
 def get_market_prices() -> dict[str, Any]:
@@ -574,7 +658,6 @@ def run_war_room(req: WarRoomRequest) -> dict[str, Any]:
             ]
 
         # Step 3: Executive Brief
-        import pandas as pd
         df_for_brief = pd.DataFrame(pm[:3]).rename(columns={
             "export_port":     "Export Terminal",
             "crude_grade":     "Crude Grade",
@@ -643,19 +726,26 @@ def trigger_backtest(req: BacktestRequest) -> dict[str, Any]:
 
 
 @app.get("/api/backtest/{event_name}")
-def get_backtest(event_name: str) -> dict[str, Any]:
+def get_backtest(
+    event_name: str,
+    sdi_threshold: float = 65.0,
+) -> dict[str, Any]:
     """
     Return the historical backtest time-series and computed verdict for the given event.
     Combines daily SDI scores with Brent prices to show lead time.
     """
     try:
+        if not 0.0 <= sdi_threshold <= 100.0:
+            raise HTTPException(
+                status_code=422,
+                detail="sdi_threshold must be between 0 and 100.",
+            )
         events = fetch_risk_events_backtest(event_name)
         if not events:
             raise HTTPException(status_code=404, detail="No backtest data found for this event.")
             
         prices = fetch_latest_prices(tickers=["BZ=F"], days=2000) # ensure we get all data going back to 2023
         
-        import pandas as pd
         price_records = [
             {"date": str(p["trade_date"]), "price": float(p["price_close"])}
             for p in prices if p.get("ticker") == "BZ=F"
@@ -683,7 +773,6 @@ def get_backtest(event_name: str) -> dict[str, Any]:
         series = []
         system_alert_date = None
         market_reaction_date = None
-        SDI_THRESHOLD = 65.0
         
         start_date = min(timeline_dict.keys())
         end_date = max(timeline_dict.keys())
@@ -724,7 +813,7 @@ def get_backtest(event_name: str) -> dict[str, Any]:
                 })
                 
                 # System alert first time we cross threshold
-                if system_alert_date is None and sdi >= SDI_THRESHOLD:
+                if system_alert_date is None and sdi >= sdi_threshold:
                     system_alert_date = current
                     
                 # Market reaction first time price breaks +1.5 std (independent of alert)
@@ -744,17 +833,34 @@ def get_backtest(event_name: str) -> dict[str, Any]:
             else:
                 verdict = f"System lagged the market: alert triggered {abs(lead_time_days)} days after price breakout."
                 
+        sensitivity = []
+        for threshold in (50, 55, 60, 65, 70, 75, 80):
+            alert_row = next(
+                (row for row in series if row["sdi_score"] >= threshold),
+                None,
+            )
+            alert_date = date.fromisoformat(alert_row["date"]) if alert_row else None
+            sensitivity.append({
+                "threshold": threshold,
+                "alert_date": alert_row["date"] if alert_row else None,
+                "lead_time_days": (
+                    (market_reaction_date - alert_date).days
+                    if alert_date and market_reaction_date
+                    else 0
+                ),
+            })
+
         return {
             "series": series,
             "system_alert_date": system_alert_date.isoformat() if system_alert_date else None,
             "market_reaction_date": market_reaction_date.isoformat() if market_reaction_date else None,
             "lead_time_days": lead_time_days,
-            "verdict": verdict
+            "verdict": verdict,
+            "sdi_threshold": sdi_threshold,
+            "threshold_sensitivity": sensitivity,
         }
     except HTTPException:
         raise
     except Exception as exc:
         logger.error("get_backtest failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
-
-

@@ -152,15 +152,21 @@ def run_backtest(job_id: int, event_name: str, start_date_str: str = None, end_d
                 rolling_std=freight_stats["rolling_std"],
             )
             
-            # Historical AIS data unavailable pre-dating our ingestion start; 
-            # vessel density held neutral for backtest purposes
-            delta_d = 0.5
+            # Historical AIS data unavailable pre-dating our ingestion start.
+            # Instead of diluting the score with a neutral 0.5 vessel delta, we
+            # renormalize the weights to create a true 3-signal composite.
+            from src.utils.metrics import _W1, _W3, _W4
+            total_active = _W1 + _W3 + _W4
             
             sdi = supply_disruption_index(
                 p_risk=float(scored.get("severity", 0.0)),
-                delta_d_vessel=delta_d,
+                delta_d_vessel=0.0,
                 delta_p_price=delta_p,
                 delta_p_freight=delta_f,
+                w1=_W1 / total_active,
+                w2=0.0,
+                w3=_W3 / total_active,
+                w4=_W4 / total_active,
             )
             
             # 5. Insert to DB

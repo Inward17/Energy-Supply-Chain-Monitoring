@@ -23,8 +23,11 @@ logger = logging.getLogger(__name__)
 # India Macro Constants  (2024/2025 data)
 # ---------------------------------------------------------------------------
 
-INDIA_CONSUMPTION_MBPD   = 5.4    # Million barrels per day — total consumption
-SPR_CAPACITY_MB          = 39.0   # Total SPR capacity in million barrels
+# Source: PPAC Industry Consumption Report, September 2024 (FY 2024-25).
+# Rounded model input, expressed as crude-equivalent million barrels/day.
+INDIA_CONSUMPTION_MBPD   = 5.4
+# Source: MoPNG/ISPRL capacity statement, 20 March 2025 (5.33 MMT ≈ 39 MB).
+SPR_CAPACITY_MB          = 39.0
 SPR_SITES = {
     "Visakhapatnam": 13.33,
     "Mangaluru":     9.75,
@@ -40,7 +43,6 @@ _CHOKEPOINT_IMPORT_SHARE: dict[str, float] = {
     "Cape of Good Hope":     0.02,
     "Turkish Straits":       0.01,
     "LOOP (Louisiana)":      0.00,
-    "Bab el-Mandeb Strait":  0.12,   # alias
 }
 
 # GDP / inflation impact per day of zero-oil (World Bank / McKinsey estimates)
@@ -95,10 +97,14 @@ def calculate_spr_impact(
     )
 
     # ── Step 2: SPR survival days ────────────────────────────────────────────
+    survival_days_is_unlimited = daily_shortfall <= 0
     if daily_shortfall > 0:
         actual_spr_survival_days = SPR_CAPACITY_MB / daily_shortfall
     else:
-        actual_spr_survival_days = 999.0  # No shortfall
+        # Retain a JSON-safe finite value for existing clients. The explicit
+        # flag prevents any future cross-scenario aggregation from treating
+        # this sentinel as an observed number of survival days.
+        actual_spr_survival_days = 999.0
 
     supply_gap_days = max(0.0, lead_time_days - actual_spr_survival_days)
 
@@ -205,6 +211,7 @@ def calculate_spr_impact(
         "spr_capacity_mb":          SPR_CAPACITY_MB,
         "spr_sites":                SPR_SITES,
         "survival_days":            round(actual_spr_survival_days, 1),
+        "survival_days_is_unlimited": survival_days_is_unlimited,
         "supply_gap_days":          round(supply_gap_days, 1),
         "adjusted_gap_days":        round(adjusted_gap, 1),
         "adjusted_survival_days":   round(adjusted_survival, 1),

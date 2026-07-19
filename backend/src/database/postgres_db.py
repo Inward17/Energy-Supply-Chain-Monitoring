@@ -115,6 +115,17 @@ def init_schema() -> None:
             first_seen  TIMESTAMPTZ DEFAULT NOW()
         )
         """,
+        # Daily call counters for the news providers. Their free tiers are
+        # capped per calendar day, so the budget has to survive a worker
+        # restart — an in-memory counter would silently reset and overrun.
+        """
+        CREATE TABLE IF NOT EXISTS provider_quota (
+            provider    TEXT NOT NULL,
+            usage_date  DATE NOT NULL,
+            calls       INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (provider, usage_date)
+        )
+        """,
         """
         CREATE TABLE IF NOT EXISTS market_prices (
             id          SERIAL PRIMARY KEY,
@@ -136,11 +147,33 @@ def init_schema() -> None:
             severity             DOUBLE PRECISION,
             affected_chokepoints TEXT[],
             affected_producer_countries TEXT[],
+            directly_affected_producer_countries TEXT[],
             confidence           DOUBLE PRECISION,
             summary              TEXT,
             sdi_score            DOUBLE PRECISION,
             source_urls          TEXT[],
+            source_fetched_at    TIMESTAMPTZ,
             created_at           TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS sdi_snapshots (
+            id                 SERIAL PRIMARY KEY,
+            sdi_score          DOUBLE PRECISION NOT NULL,
+            p_risk             DOUBLE PRECISION NOT NULL,
+            delta_d            DOUBLE PRECISION NOT NULL,
+            delta_p            DOUBLE PRECISION NOT NULL,
+            delta_f            DOUBLE PRECISION NOT NULL,
+            confidence_low     DOUBLE PRECISION,
+            confidence_high    DOUBLE PRECISION,
+            top_region         TEXT,
+            top_chokepoints    TEXT[],
+            event_source_at    TIMESTAMPTZ,
+            vessel_source_at   TIMESTAMPTZ,
+            market_source_date DATE,
+            ais_status         TEXT,
+            market_status      TEXT,
+            computed_at        TIMESTAMPTZ DEFAULT NOW()
         )
         """,
         """
@@ -179,13 +212,31 @@ def init_schema() -> None:
         # Safely add producer countries to existing DBs
         "ALTER TABLE risk_events ADD COLUMN IF NOT EXISTS affected_producer_countries TEXT[]",
         "ALTER TABLE risk_events_backtest ADD COLUMN IF NOT EXISTS affected_producer_countries TEXT[]",
+        "ALTER TABLE risk_events ADD COLUMN IF NOT EXISTS directly_affected_producer_countries TEXT[]",
+        "ALTER TABLE risk_events ADD COLUMN IF NOT EXISTS source_fetched_at TIMESTAMPTZ",
         # Safely add severity reasoning to existing DBs
         "ALTER TABLE risk_events ADD COLUMN IF NOT EXISTS severity_reasoning TEXT",
         "ALTER TABLE risk_events_backtest ADD COLUMN IF NOT EXISTS severity_reasoning TEXT",
+        "ALTER TABLE news_cache ADD COLUMN IF NOT EXISTS article_category TEXT DEFAULT 'general'",
+        "ALTER TABLE risk_events ADD COLUMN IF NOT EXISTS article_category TEXT DEFAULT 'general'",
+        """
+        UPDATE risk_events AS r
+        SET source_fetched_at = COALESCE(
+            (
+                SELECT MAX(n.fetched_at)
+                FROM news_cache AS n
+                WHERE n.url = ANY(COALESCE(r.source_urls, ARRAY[]::TEXT[]))
+            ),
+            r.created_at
+        )
+        WHERE r.source_fetched_at IS NULL
+        """,
         "CREATE INDEX IF NOT EXISTS idx_news_processed ON news_cache (processed, fetched_at DESC)",
         "CREATE INDEX IF NOT EXISTS idx_vessel_region  ON vessel_telemetry (region, recorded_at DESC)",
         "CREATE INDEX IF NOT EXISTS idx_prices_ticker  ON market_prices (ticker, trade_date DESC)",
         "CREATE INDEX IF NOT EXISTS idx_risk_severity  ON risk_events (severity DESC, created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_risk_source    ON risk_events (source_fetched_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_sdi_computed   ON sdi_snapshots (computed_at DESC)",
         "CREATE INDEX IF NOT EXISTS idx_risk_bt_event  ON risk_events_backtest (event_name, created_at DESC)",
     ]
     try:
@@ -216,8 +267,8 @@ def upsert_news(records: list[dict[str, Any]]) -> int:
     inserted = 0
     stmt = text(
         """
-        INSERT INTO news_cache (url, title, source, fetched_at, processed)
-        VALUES (:url, :title, :source, :fetched_at, FALSE)
+        INSERT INTO news_cache (url, title, source, fetched_at, processed, article_category)
+        VALUES (:url, :title, :source, :fetched_at, FALSE, :article_category)
         ON CONFLICT (url) DO NOTHING
         """
     )
@@ -230,7 +281,12 @@ def upsert_news(records: list[dict[str, Any]]) -> int:
                         "url": rec.get("url"),
                         "title": rec.get("title", ""),
                         "source": rec.get("source", ""),
-                        "fetched_at": datetime.now(timezone.utc),
+                        # Prefer the article's own publication time. Risk decay
+                        # runs from this timestamp, so stamping a provider's
+                        # delayed article (GNews ~12h, NewsAPI ~24h) as "now"
+                        # would score day-old news as if it were breaking.
+                        "fetched_at": rec.get("published_at") or datetime.now(timezone.utc),
+                        "article_category": rec.get("article_category", "general"),
                     },
                 )
                 inserted += result.rowcount
@@ -239,16 +295,51 @@ def upsert_news(records: list[dict[str, Any]]) -> int:
     return inserted
 
 
-def fetch_unprocessed_news(limit: int = 10) -> list[dict[str, Any]]:
-    """Return unprocessed news_cache rows for the Sentinel Agent."""
+def fetch_unprocessed_news(
+    limit: int = 10, max_age_hours: int = 72
+) -> list[dict[str, Any]]:
+    """Return recent unprocessed rows, excluding stale backlog from scoring."""
     try:
+        l_cp = int(limit * 0.4)
+        l_prod = int(limit * 0.3)
+        l_gen = limit - l_cp - l_prod
+        
         with get_conn() as conn:
             rows = conn.execute(
                 text(
-                    "SELECT id, url, title, source FROM news_cache "
-                    "WHERE processed = FALSE ORDER BY fetched_at DESC LIMIT :lim"
+                    """
+                    (
+                        SELECT id, url, title, source, article_category, fetched_at 
+                        FROM news_cache 
+                        WHERE processed = FALSE AND article_category = 'chokepoint'
+                        AND fetched_at >= NOW() - make_interval(hours => :max_age_hours)
+                        ORDER BY fetched_at DESC LIMIT :l_cp
+                    )
+                    UNION ALL
+                    (
+                        SELECT id, url, title, source, article_category, fetched_at 
+                        FROM news_cache 
+                        WHERE processed = FALSE AND article_category = 'producer_nation'
+                        AND fetched_at >= NOW() - make_interval(hours => :max_age_hours)
+                        ORDER BY fetched_at DESC LIMIT :l_prod
+                    )
+                    UNION ALL
+                    (
+                        SELECT id, url, title, source, article_category, fetched_at 
+                        FROM news_cache 
+                        WHERE processed = FALSE AND article_category NOT IN ('chokepoint', 'producer_nation')
+                        AND fetched_at >= NOW() - make_interval(hours => :max_age_hours)
+                        ORDER BY fetched_at DESC LIMIT :l_gen
+                    )
+                    ORDER BY fetched_at DESC
+                    """
                 ),
-                {"lim": limit},
+                {
+                    "l_cp": l_cp, 
+                    "l_prod": l_prod, 
+                    "l_gen": l_gen, 
+                    "max_age_hours": max(1, max_age_hours)
+                },
             ).mappings().all()
             return [dict(r) for r in rows]
     except Exception as exc:
@@ -340,6 +431,93 @@ def fetch_vessels(region: str | None = None, limit: int = 500) -> list[dict[str,
             return [dict(r) for r in rows]
     except Exception as exc:
         logger.error("fetch_vessels failed: %s", exc)
+        return []
+
+
+def record_provider_call(provider: str) -> None:
+    """Count one outbound call against a provider's daily free-tier budget."""
+    try:
+        with get_conn() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO provider_quota (provider, usage_date, calls)
+                    VALUES (:provider, CURRENT_DATE, 1)
+                    ON CONFLICT (provider, usage_date)
+                    DO UPDATE SET calls = provider_quota.calls + 1
+                    """
+                ),
+                {"provider": provider},
+            )
+    except Exception as exc:
+        logger.error("record_provider_call failed: %s", exc)
+
+
+def provider_calls_today(provider: str) -> int:
+    """Calls already spent against a provider today."""
+    try:
+        with get_conn() as conn:
+            return int(
+                conn.execute(
+                    text(
+                        "SELECT calls FROM provider_quota "
+                        "WHERE provider = :provider AND usage_date = CURRENT_DATE"
+                    ),
+                    {"provider": provider},
+                ).scalar()
+                or 0
+            )
+    except Exception as exc:
+        logger.error("provider_calls_today failed: %s", exc)
+        # Fail closed: an unknown spend is treated as exhausted rather than
+        # risking an overrun of a hard daily cap.
+        return 10**6
+
+
+def fetch_region_tanker_buckets(
+    days: int = 7,
+    bucket_minutes: int = 60,
+) -> list[dict[str, Any]]:
+    """Per-region, per-time-bucket tanker counts with their AIS type coverage.
+
+    Both the live reading and the rolling baseline are derived from this one
+    query so they share an identical measurement method. That matters because
+    AIS ship-type coverage is only partial and *not* stationary — comparing a
+    live count against a differently-measured baseline would read pure sampling
+    drift as a traffic anomaly.
+
+    Returns rows of: region, bucket, total (distinct MMSI), typed (distinct
+    MMSI with a known ship_type), tankers (distinct MMSI typed as a tanker).
+    """
+    try:
+        with get_conn() as conn:
+            rows = conn.execute(
+                text(
+                    """
+                    SELECT
+                        region,
+                        to_timestamp(
+                            floor(extract(epoch FROM recorded_at) / (:bucket_seconds))
+                            * (:bucket_seconds)
+                        ) AS bucket,
+                        COUNT(DISTINCT mmsi) AS total,
+                        COUNT(DISTINCT mmsi) FILTER (WHERE ship_type IS NOT NULL) AS typed,
+                        COUNT(DISTINCT mmsi) FILTER (
+                            WHERE ship_type >= 80 AND ship_type < 90
+                        ) AS tankers
+                    FROM vessel_telemetry
+                    WHERE recorded_at >= NOW() - make_interval(days => :days)
+                      AND region IS NOT NULL
+                      AND region <> 'Unknown'
+                    GROUP BY region, bucket
+                    ORDER BY region, bucket
+                    """
+                ),
+                {"days": days, "bucket_seconds": bucket_minutes * 60},
+            ).mappings().all()
+            return [dict(r) for r in rows]
+    except Exception as exc:
+        logger.error("fetch_region_tanker_buckets failed: %s", exc)
         return []
 
 
@@ -449,11 +627,13 @@ def upsert_risk_event(event: dict[str, Any]) -> None:
         with get_conn() as conn:
             stmt = text("""
                 INSERT INTO risk_events
-                    (region, disruption_type, severity, affected_chokepoints, affected_producer_countries,
-                     confidence, summary, sdi_score, source_urls, severity_reasoning)
+                    (region, disruption_type, severity, affected_chokepoints, directly_affected_chokepoints, affected_producer_countries,
+                     directly_affected_producer_countries, confidence, summary, sdi_score, source_urls,
+                     source_fetched_at, severity_reasoning, article_category)
                 VALUES
-                    (:region, :disruption_type, :severity, :affected_chokepoints, :affected_producer_countries,
-                     :confidence, :summary, :sdi_score, :source_urls, :severity_reasoning)
+                    (:region, :disruption_type, :severity, :affected_chokepoints, :directly_affected_chokepoints, :affected_producer_countries,
+                     :directly_affected_producer_countries, :confidence, :summary, :sdi_score, :source_urls,
+                     :source_fetched_at, :severity_reasoning, :article_category)
             """)
             conn.execute(
                 stmt,
@@ -462,12 +642,18 @@ def upsert_risk_event(event: dict[str, Any]) -> None:
                     "disruption_type":      event.get("disruption_type", "unknown"),
                     "severity":             event.get("severity", 0.1),
                     "affected_chokepoints": event.get("affected_chokepoints", []),
+                    "directly_affected_chokepoints": event.get("directly_affected_chokepoints", []),
                     "affected_producer_countries": event.get("affected_producer_countries", []),
+                    "directly_affected_producer_countries": event.get(
+                        "directly_affected_producer_countries", []
+                    ),
                     "confidence":           event.get("confidence", 0.5),
                     "summary":              event.get("summary", ""),
                     "sdi_score":            event.get("sdi_score", 0.0),
                     "source_urls":          event.get("source_urls", []),
+                    "source_fetched_at":    event.get("source_fetched_at"),
                     "severity_reasoning":   event.get("severity_reasoning", ""),
+                    "article_category":     event.get("article_category", "general"),
                 }
             )
     except Exception as exc:
@@ -480,8 +666,9 @@ def fetch_risk_events(limit: int = 50) -> list[dict[str, Any]]:
         with get_conn() as conn:
             rows = conn.execute(
                 text(
-                    "SELECT id, region, disruption_type, severity, affected_chokepoints, affected_producer_countries, "
-                    "confidence, summary, sdi_score, source_urls, severity_reasoning, created_at "
+                    "SELECT id, region, disruption_type, severity, affected_chokepoints, directly_affected_chokepoints, affected_producer_countries, "
+                    "directly_affected_producer_countries, confidence, summary, sdi_score, source_urls, "
+                    "source_fetched_at, severity_reasoning, created_at "
                     "FROM risk_events ORDER BY created_at DESC LIMIT :lim"
                 ),
                 {"lim": limit},
@@ -497,8 +684,9 @@ def fetch_risk_event(event_id: int) -> dict[str, Any] | None:
         with get_conn() as conn:
             row = conn.execute(
                 text(
-                    "SELECT id, region, disruption_type, severity, affected_chokepoints, affected_producer_countries, "
-                    "confidence, summary, sdi_score, source_urls, severity_reasoning, created_at "
+                    "SELECT id, region, disruption_type, severity, affected_chokepoints, directly_affected_chokepoints, "
+                    "affected_producer_countries, directly_affected_producer_countries, confidence, summary, "
+                    "sdi_score, source_urls, source_fetched_at, severity_reasoning, created_at "
                     "FROM risk_events WHERE id = :event_id"
                 ),
                 {"event_id": event_id},
@@ -513,13 +701,79 @@ def fetch_latest_sdi() -> float:
     try:
         with get_conn() as conn:
             row = conn.execute(
-                text("SELECT sdi_score FROM risk_events ORDER BY created_at DESC LIMIT 1")
+                text("SELECT sdi_score FROM sdi_snapshots ORDER BY computed_at DESC LIMIT 1")
             ).mappings().first()
             if row and row["sdi_score"] is not None:
                 return float(row["sdi_score"])
     except Exception as exc:
         logger.error("fetch_latest_sdi failed: %s", exc)
     return 0.0
+
+
+# ---------------------------------------------------------------------------
+# sdi_snapshots
+# ---------------------------------------------------------------------------
+
+def upsert_sdi_snapshot(snapshot: dict[str, Any]) -> None:
+    """Persist one canonical SDI computation for the dashboard timeline."""
+    try:
+        with get_conn() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO sdi_snapshots
+                        (sdi_score, p_risk, delta_d, delta_p, delta_f,
+                         confidence_low, confidence_high, top_region, top_chokepoints,
+                         event_source_at, vessel_source_at, market_source_date,
+                         ais_status, market_status, computed_at)
+                    VALUES
+                        (:sdi_score, :p_risk, :delta_d, :delta_p, :delta_f,
+                         :confidence_low, :confidence_high, :top_region, :top_chokepoints,
+                         :event_source_at, :vessel_source_at, :market_source_date,
+                         :ais_status, :market_status, COALESCE(:computed_at, NOW()))
+                    """
+                ),
+                {
+                    "sdi_score": snapshot.get("sdi_score", 0.0),
+                    "p_risk": snapshot.get("p_risk", 0.0),
+                    "delta_d": snapshot.get("delta_d", 0.0),
+                    "delta_p": snapshot.get("delta_p", 0.0),
+                    "delta_f": snapshot.get("delta_f", 0.0),
+                    "confidence_low": snapshot.get("confidence_low"),
+                    "confidence_high": snapshot.get("confidence_high"),
+                    "top_region": snapshot.get("top_region"),
+                    "top_chokepoints": snapshot.get("top_chokepoints", []),
+                    "event_source_at": snapshot.get("event_source_at"),
+                    "vessel_source_at": snapshot.get("vessel_source_at"),
+                    "market_source_date": snapshot.get("market_source_date"),
+                    "ais_status": snapshot.get("ais_status", "unavailable"),
+                    "market_status": snapshot.get("market_status", "unavailable"),
+                    "computed_at": snapshot.get("computed_at"),
+                },
+            )
+    except Exception as exc:
+        logger.error("upsert_sdi_snapshot failed: %s", exc)
+        raise
+
+
+def fetch_sdi_snapshots(limit: int = 50) -> list[dict[str, Any]]:
+    """Return persisted SDI points, newest first."""
+    try:
+        with get_conn() as conn:
+            rows = conn.execute(
+                text(
+                    "SELECT id, sdi_score, p_risk, delta_d, delta_p, delta_f, "
+                    "confidence_low, confidence_high, top_region, top_chokepoints, "
+                    "event_source_at, vessel_source_at, market_source_date, "
+                    "ais_status, market_status, computed_at "
+                    "FROM sdi_snapshots ORDER BY computed_at DESC LIMIT :lim"
+                ),
+                {"lim": limit},
+            ).mappings().all()
+            return [dict(row) for row in rows]
+    except Exception as exc:
+        logger.error("fetch_sdi_snapshots failed: %s", exc)
+        return []
 
 # ---------------------------------------------------------------------------
 # risk_events_backtest

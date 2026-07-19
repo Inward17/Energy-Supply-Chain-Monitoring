@@ -5,8 +5,8 @@ Background orchestration engine — the Shadow Cache heartbeat.
 
 Each pipeline step runs on its own independent schedule:
   - market_trawler  / freight_trawler / sentinel_agent  — every 15 min (cheap yfinance)
-  - gdelt_collector — every 30 min   (GDELT has a soft rate limit)
-  - ais_streamer    — every 60 min   (2-min WebSocket window; avoid hammering)
+  - gdelt_collector / SDI snapshot - every 15 min
+  - ais_streamer - immediately, then every 60 min (2-min WebSocket window)
   - portwatch       — every 12 hours (slow-moving port traffic data)
   - backtest jobs   — every 30 s     (user-triggered; must start quickly)
 
@@ -22,12 +22,15 @@ import argparse
 import logging
 import os
 import sys
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import BinaryIO, Callable
 
 import schedule
 from dotenv import load_dotenv
+
 load_dotenv(override=True)
 
 # ---------------------------------------------------------------------------
@@ -45,26 +48,116 @@ logging.basicConfig(
 logger = logging.getLogger("cron_worker")
 
 # ---------------------------------------------------------------------------
-# File Lock (prevent overlapping runs on Windows)
+# Worker/process locks
 # ---------------------------------------------------------------------------
 
-_LOCK_FILE = Path("cron_worker.lock")
-_running = False  # Simple in-process guard (used instead of fcntl on Windows)
+_LOCK_FILE = Path(__file__).resolve().with_suffix(".lock")
+_cycle_lock = threading.Lock()
+
+
+class _ProcessSingleton:
+    """Hold an operating-system file lock for the lifetime of one worker.
+
+    The lock is attached to the open file handle rather than the presence of the
+    lock file, so an unclean process exit cannot leave a permanently stale lock.
+    ``msvcrt.locking`` provides the required cross-process exclusion on Windows;
+    ``flock`` keeps development and CI behaviour equivalent on POSIX systems.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self._handle: BinaryIO | None = None
+        self.owner_pid: str | None = None
+
+    def acquire(self) -> bool:
+        if self._handle is not None:
+            return True
+
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            handle = self.path.open("x+b")
+        except FileExistsError:
+            handle = self.path.open("r+b")
+
+        # msvcrt locks a byte range and therefore needs at least one byte.
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() == 0:
+            handle.write(b"\0")
+            handle.flush()
+        handle.seek(0)
+
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except (OSError, IOError):
+            try:
+                # PID metadata starts after the locked sentinel byte, so it
+                # remains readable while another Windows process owns byte 0.
+                handle.seek(1)
+                owner = handle.read().decode("ascii", errors="ignore")
+                self.owner_pid = owner.strip("\0\r\n ") or None
+            except OSError:
+                # A Windows byte-range lock can also deny reads. Exclusion still
+                # succeeded even when the diagnostic owner PID is unavailable.
+                self.owner_pid = None
+            finally:
+                handle.close()
+            return False
+
+        handle.seek(1)
+        handle.write(str(os.getpid()).encode("ascii"))
+        handle.truncate()
+        handle.flush()
+        self._handle = handle
+        self.owner_pid = str(os.getpid())
+        return True
+
+    def release(self) -> None:
+        handle = self._handle
+        if handle is None:
+            return
+
+        try:
+            # Keep the sentinel byte but remove diagnostic metadata while this
+            # process still owns the lock. The file itself can safely persist.
+            handle.seek(1)
+            handle.truncate()
+            handle.flush()
+            handle.seek(0)
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            handle.close()
+            self._handle = None
+            self.owner_pid = None
+
+
+_WORKER_LOCK = _ProcessSingleton(_LOCK_FILE)
 
 
 def _acquire_lock() -> bool:
-    """Return True if no other cycle is already running."""
-    global _running
-    if _running:
+    """Prevent overlapping cycles inside the singleton worker process."""
+    if not _cycle_lock.acquire(blocking=False):
         logger.warning("Previous cron cycle still running — skipping this tick.")
         return False
-    _running = True
     return True
 
 
 def _release_lock() -> None:
-    global _running
-    _running = False
+    if _cycle_lock.locked():
+        _cycle_lock.release()
 
 
 # ---------------------------------------------------------------------------
@@ -102,8 +195,18 @@ def step_ais() -> None:
 def step_sentinel() -> None:
     """Run Gemini Sentinel Agent on unprocessed news batch."""
     from src.agents.sentinel_agent import process_unprocessed_batch
-    n = process_unprocessed_batch(batch_size=5)
+    n = process_unprocessed_batch(batch_size=10)
     logger.info("SENTINEL✓  %d risk event(s) written", n)
+
+
+def step_sdi_snapshot() -> None:
+    """Persist one canonical SDI point from the refreshed local caches."""
+    from src.agents.modeler_agent import compute_current_sdi
+    from src.database.postgres_db import upsert_sdi_snapshot
+
+    snapshot = compute_current_sdi()
+    upsert_sdi_snapshot(snapshot)
+    logger.info("SDI     snapshot persisted: %.1f", snapshot["sdi_score"])
 
 
 def step_portwatch() -> None:
@@ -117,7 +220,7 @@ def step_backtests() -> None:
     """Process any pending backtest jobs from the queue."""
     from src.database.postgres_db import fetch_pending_backtest_jobs
     from run_backtest import run_backtest
-    
+
     jobs = fetch_pending_backtest_jobs()
     for job in jobs:
         logger.info(f"BACKTEST✓  Starting job {job['id']} for {job['event_name']}")
@@ -126,12 +229,26 @@ def step_backtests() -> None:
             import sys
             # Launch in background so we don't block the cron cycle
             subprocess.Popen([
-                sys.executable, "run_backtest.py", 
-                "--job-id", str(job["id"]), 
+                sys.executable, "run_backtest.py",
+                "--job-id", str(job["id"]),
                 "--event-name", job["event_name"]
             ])
         except Exception as exc:
             logger.error(f"BACKTEST✗  Job {job['id']} failed to start: {exc}")
+
+def step_ais_and_snapshot() -> None:
+    """Refresh AIS and immediately persist the SDI that uses that snapshot."""
+    step_ais()
+    step_sdi_snapshot()
+
+
+def _run_step_safely(name: str, fn: Callable[[], None]) -> None:
+    """Keep a failed standalone scheduled job from terminating the worker."""
+    try:
+        fn()
+    except Exception as exc:
+        logger.error("Scheduled step failed: %s - %s", name, exc, exc_info=True)
+
 
 # ---------------------------------------------------------------------------
 # Full Cycle
@@ -141,7 +258,13 @@ def run_cycle() -> None:
     """Execute one complete Shadow Cache refresh cycle."""
     if not _acquire_lock():
         return
+    try:
+        _run_cycle_unlocked()
+    finally:
+        _release_lock()
 
+
+def _run_cycle_unlocked() -> None:
     start = datetime.now(timezone.utc)
     logger.info("=" * 60)
     logger.info("CRON CYCLE START  %s", start.strftime("%Y-%m-%d %H:%M UTC"))
@@ -150,7 +273,11 @@ def run_cycle() -> None:
     steps = [
         ("Market Trawler",  step_market),
         ("Freight Trawler", step_freight),
+        # GDELT runs before Sentinel so fresh articles are always available in the same cycle.
+        # Previously on a separate 30-min schedule which meant Sentinel could fire on an empty queue.
+        ("GDELT Collector", step_gdelt),
         ("Sentinel Agent",  step_sentinel),
+        ("SDI Snapshot",    step_sdi_snapshot),
     ]
 
     for name, fn in steps:
@@ -164,8 +291,6 @@ def run_cycle() -> None:
     logger.info("CRON CYCLE DONE   %.1fs elapsed", elapsed)
     logger.info("=" * 60)
 
-    _release_lock()
-
 
 # ---------------------------------------------------------------------------
 # Entry Point
@@ -177,6 +302,18 @@ def main() -> None:
     parser.add_argument("--backfill", action="store_true", help="Backfill 24h GDELT news then exit")
     args = parser.parse_args()
 
+    if not _WORKER_LOCK.acquire():
+        owner = f" (PID {_WORKER_LOCK.owner_pid})" if _WORKER_LOCK.owner_pid else ""
+        logger.error("Another cron worker is already running%s; exiting.", owner)
+        return
+
+    try:
+        _run_worker(args)
+    finally:
+        _WORKER_LOCK.release()
+
+
+def _run_worker(args: argparse.Namespace) -> None:
     # Ensure DB schema exists before any cycle runs
     from src.database.postgres_db import init_schema
     from src.database.neo4j_graph import seed_graph
@@ -190,7 +327,11 @@ def main() -> None:
     if args.backfill:
         logger.info("Backfilling GDELT 24h news ...")
         from src.ingestion.gdelt_collector import backfill
-        backfill(timespan="24h")
+        try:
+            backfill(timespan="24h")
+        except Exception as exc:
+            logger.error("Backfill failed: %s", exc)
+            raise SystemExit(1)
         logger.info("Backfill complete. Exiting.")
         return
 
@@ -205,24 +346,29 @@ def main() -> None:
     logger.info("Starting scheduled cron loop — every %d minutes.", interval)
     logger.info("Press Ctrl+C to stop.")
 
-    # Run immediately on startup so dashboard has data right away
+    # Run immediately on startup so the dashboard has current inputs.
     run_cycle()
-    step_portwatch()
+    for name, fn in (
+        ("Initial AIS Snapshot", step_ais),
+        ("Post-AIS SDI Snapshot", step_sdi_snapshot),
+        ("Initial PortWatch", step_portwatch),
+    ):
+        logger.info("Running startup step: %s", name)
+        _run_step_safely(name, fn)
 
     # Cheap market data — every 15 min (yfinance, no rate limit concerns)
     schedule.every(interval).minutes.do(run_cycle)
 
-    # GDELT has a soft rate limit — every 30 min is safe
-    schedule.every(30).minutes.do(step_gdelt)
-
     # AIS opens a 2-min WebSocket window — every 60 min to avoid hammering
-    schedule.every(60).minutes.do(step_ais)
+    schedule.every(60).minutes.do(
+        _run_step_safely, "AIS + SDI Refresh", step_ais_and_snapshot
+    )
 
     # Port traffic is slow-moving — once every 12 hours is plenty
-    schedule.every(12).hours.do(step_portwatch)
+    schedule.every(12).hours.do(_run_step_safely, "PortWatch", step_portwatch)
 
     # Backtest jobs are user-triggered — must start within ~30 s of being queued
-    schedule.every(30).seconds.do(step_backtests)
+    schedule.every(30).seconds.do(_run_step_safely, "Backtests", step_backtests)
 
     try:
         while True:

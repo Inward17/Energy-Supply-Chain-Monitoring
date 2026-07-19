@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from "react"
 import dynamic from "next/dynamic"
-import { Globe, Ship, Loader2 } from "lucide-react"
+import { Ship, Loader2 } from "lucide-react"
 import { Panel } from "../ui"
 import { fetchVessels, fetchRiskEvents, fetchLiveMetrics, type VesselPosition, type RiskEvent } from "@/lib/api"
 
 // Dynamically import the map component with SSR disabled
 const DynamicMap = dynamic(() => import("./dynamic-map"), { 
   ssr: false,
-  loading: () => <div className="flex h-full w-full items-center justify-center text-slate-500">Loading Map...</div>
+  loading: () => <div className="flex h-full w-full items-center justify-center text-muted">Loading Map...</div>
 })
 
 export function ThreatMap() {
@@ -35,42 +35,42 @@ export function ThreatMap() {
   }, [])
 
   return (
-    <Panel title="Global Threat Map" icon={<Globe className="h-4 w-4 text-cyan-400" />}>
+    <Panel title="Global Threat Map" tone="accent">
       <div className="p-4 flex flex-col h-full">
         {!aisConfigured && (
-          <div className="mb-4 text-orange-400 bg-orange-400/10 p-3 rounded border border-orange-400/20 text-sm">
+          <div className="mb-4 text-orange bg-orange-soft p-3 rounded border border-orange/20 text-sm">
             <strong>AISStream Key Missing:</strong> Live vessel telemetry is disabled. Showing last-known historical vessel positions.
           </div>
         )}
-        {error && <div className="mb-4 text-rose-500 bg-rose-500/10 p-2 rounded">Failed to load map data: {error}</div>}
-        <div className="relative flex-1 min-h-[540px] w-full overflow-hidden rounded-lg border border-slate-800 bg-slate-950">
+        {error && <div className="mb-4 text-crit bg-crit-soft p-2 rounded">Failed to load map data: {error}</div>}
+        <div className="relative flex-1 min-h-[540px] w-full overflow-hidden rounded-lg border border-border bg-panel-2">
           
           {loading ? (
             <div className="flex h-full w-full items-center justify-center">
-              <Loader2 className="h-8 w-8 animate-spin text-cyan-500" />
+              <Loader2 className="h-8 w-8 animate-spin text-accent" />
             </div>
           ) : (
             <DynamicMap vessels={vessels} events={events} />
           )}
 
           {/* Legend */}
-          <div className="absolute bottom-3 left-3 z-[1000] flex flex-col gap-1.5 rounded-md border border-slate-800 bg-slate-950/80 px-3 py-2 text-[11px] text-slate-300 backdrop-blur-sm pointer-events-none">
+          <div className="absolute bottom-3 left-3 z-[1000] flex flex-col gap-1.5 rounded-md border border-border bg-panel/90 px-3 py-2 text-[11px] text-fg backdrop-blur-sm pointer-events-none">
             <span className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-cyan-400 shadow-[0_0_6px_1px_rgba(34,211,238,0.7)]" />
+              <span className="h-2 w-2 rounded-full bg-accent shadow-[0_0_6px_1px_rgba(34,211,238,0.7)]" />
               Tracked Vessel
             </span>
             <span className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-rose-500" />
+              <span className="h-2 w-2 rounded-full bg-crit" />
               Risk Heatmap
             </span>
           </div>
 
-          <div className="absolute right-3 top-3 z-[1000] flex items-center gap-1.5 rounded-md border border-slate-800 bg-slate-950/80 px-3 py-1.5 text-[11px] font-medium text-cyan-300 pointer-events-none">
+          <div className="absolute right-3 top-3 z-[1000] flex items-center gap-1.5 rounded-md border border-border bg-panel/90 px-3 py-1.5 text-[11px] font-medium text-accent pointer-events-none">
             <Ship className="h-3.5 w-3.5" />
             {vessels.length} vessels live
           </div>
         </div>
-        <p className="mt-3 text-[10px] text-slate-500 italic">
+        <p className="mt-3 text-[10px] text-muted italic">
           * Note: Vessel positions (AIS) and geopolitical risk heatmaps are independent signals. A region may exhibit high geopolitical risk without active vessel tracking coverage.
         </p>
       </div>

@@ -30,9 +30,10 @@ from src.database.neo4j_graph import (
     get_refinery_coords,
     get_crude_specs,
     get_grade_suppliers,
+    get_driver,
 )
 from src.database.postgres_db import fetch_latest_prices, fetch_risk_events
-from src.agents.modeler_agent import score_alternatives
+from src.agents.modeler_agent import get_current_freight_index, score_alternatives
 from src.utils.constants import (
     CHOKEPOINTS,
     FIXER_BRENT_FALLBACK_USD,
@@ -45,6 +46,7 @@ from src.utils.constants import (
     VLCC_DAILY_CHARTER_USD,
     VLCC_CARGO_BARRELS,
     VLCC_SPEED_KNOTS,
+    FREIGHT_RATE_SENSITIVITY,
     SANCTIONED_SOURCE_COUNTRIES,
 )
 
@@ -82,18 +84,46 @@ _CHOKEPOINT_DETOUR: dict[str, dict] = {
     "Panama Canal":        {"detour_days": 10, "triggers": ["Panama Canal"]},
 }
 
+# ``searoute`` can explicitly avoid these named passages. Where the library
+# has coverage, a route-specific detour replaces the old fixed-day heuristic.
+_SEAROUTE_RESTRICTIONS: dict[str, str] = {
+    "Suez Canal": "suez",
+    "Bab-el-Mandeb": "babalmandab",
+    "Turkish Straits": "bosporus",
+    "Strait of Gibraltar": "gibraltar",
+    "Panama Canal": "panama",
+    "Strait of Hormuz": "ormuz",
+}
+
 
 # ---------------------------------------------------------------------------
 # Step 3 Helper: Freight Premium Calculation
 # ---------------------------------------------------------------------------
 
-def _compute_freight_premium(voyage_days: float) -> float:
+def _compute_freight_premium(
+    voyage_days: float,
+    freight_index: float = 0.5,
+) -> float:
     """
     Calculate freight cost per barrel from total voyage days.
 
-    Formula: (VLCC_DAILY_CHARTER × voyage_days) / VLCC_CARGO_BARRELS
+    The live freight index is neutral at 0.50. Above-neutral freight raises
+    the effective charter rate, while a calm market lowers it symmetrically.
+
+    Formula:
+      effective_rate = base_rate × (1 + (index - 0.5) × sensitivity)
+      premium = effective_rate × voyage_days / cargo_barrels
     """
-    return round((VLCC_DAILY_CHARTER_USD * voyage_days) / VLCC_CARGO_BARRELS, 2)
+    index = max(0.0, min(1.0, float(freight_index)))
+    effective_daily_rate = VLCC_DAILY_CHARTER_USD * (
+        1.0 + (index - 0.5) * FREIGHT_RATE_SENSITIVITY
+    )
+    return round((effective_daily_rate * voyage_days) / VLCC_CARGO_BARRELS, 2)
+
+
+def _worst_blend_congestion(congestion_scores: list[float]) -> float:
+    """A blend is constrained by its most congested required supply leg."""
+    return max(congestion_scores, default=0.5)
 
 
 # ---------------------------------------------------------------------------
@@ -138,6 +168,7 @@ def _compute_lead_time(
     dest_lon: float,
     dest_lat: float,
     extra_detour_days: float = 0,
+    blocked_chokepoint: str | None = None,
 ) -> float:
     """
     Calculate total voyage lead time using searoute marine routing.
@@ -146,7 +177,9 @@ def _compute_lead_time(
     'Flying Ship Bug' where geopy would route Novorossiysk → Rotterdam
     straight over Ukraine. IMPORTANT: searoute takes [lon, lat] order.
 
-    Formula: (sea_route_km / km_per_nm / NAUTICAL_MILES_PER_DAY) + extra_detour_days
+    When supported by ``searoute``, an affected passage is restricted and the
+    actual additional nautical miles are used. Static detour days remain a
+    fallback for passages the route engine cannot restrict.
     """
     try:
         route = sr.searoute([port_lon, port_lat], [dest_lon, dest_lat], units="km")
@@ -160,10 +193,31 @@ def _compute_lead_time(
         dlat = radians(dest_lat - port_lat)
         a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
         dist_km = 2 * 6371 * asin(sqrt(a))
+    fallback_detour_days = extra_detour_days
+
+    restriction = _SEAROUTE_RESTRICTIONS.get(blocked_chokepoint or "")
+    if dist_km and extra_detour_days > 0 and restriction:
+        try:
+            detour_route = sr.searoute(
+                [port_lon, port_lat],
+                [dest_lon, dest_lat],
+                units="km",
+                restrictions=["northwest", restriction],
+            )
+            detour_km = detour_route["properties"]["length"]
+            if detour_km > dist_km:
+                dist_km = detour_km
+                fallback_detour_days = 0
+        except Exception as exc:
+            logger.debug(
+                "searoute restriction '%s' failed (%s) — using static detour fallback",
+                restriction,
+                exc,
+            )
 
     dist_nm = dist_km / _KM_PER_NM
     base_days = dist_nm / NAUTICAL_MILES_PER_DAY
-    return round(base_days + extra_detour_days, 1)
+    return round(base_days + fallback_detour_days, 1)
 
 
 # ---------------------------------------------------------------------------
@@ -249,6 +303,11 @@ def find_alternatives(
         current_brent = FIXER_BRENT_FALLBACK_USD
         logger.warning("fixer_agent: No Brent price in DB — using fallback $%.2f/bbl", current_brent)
 
+    # Cache-backed BOAT stress signal shared with the SDI. If its feed is
+    # unavailable, the Modeler helper returns 0.50 so existing base pricing is
+    # preserved rather than fabricating a stressed freight rate.
+    freight_index = get_current_freight_index()
+
     # ─── Step 1: Chemical Constraint — refinery matching ────────────────────
     refinery_options: list[dict] = []
     grade_suppliers: list[str] = []
@@ -270,7 +329,7 @@ def find_alternatives(
             logger.info("fixer_agent: No ports for grade '%s', widening to compatible grades.", crude_grade)
             all_ports = find_export_ports_bypassing(blocked_chokepoint, None)
             req_specs = get_crude_specs(crude_grade)
-            
+
             if req_specs:
                 req_api = req_specs["api_gravity"]
                 req_sul = req_specs["sulphur_pct"]
@@ -289,7 +348,67 @@ def find_alternatives(
                         p["match_type"] = "substitute"
                         p["match_reason"] = "Fallback substitute (specs missing)"
                         compatible_ports.append(p)
-                viable_ports = compatible_ports
+
+                # Binary Blending
+                blended_ports = []
+                seen_pairs = set()
+
+                for i in range(len(all_ports)):
+                    for j in range(i + 1, len(all_ports)):
+                        p1 = all_ports[i]
+                        p2 = all_ports[j]
+
+                        grade1 = p1.get("grade")
+                        grade2 = p2.get("grade")
+                        port1_name = p1.get("name")
+                        port2_name = p2.get("name")
+
+                        # Dedup: same grade, same port, or same country (correlated risk — no diversification)
+                        if grade1 == grade2 or port1_name == port2_name:
+                            continue
+                        if p1.get("country") == p2.get("country"):
+                            continue  # same-country blends violate independence assumption
+
+                        # Unordered pair dedup
+                        pair_key = tuple(sorted([grade1, grade2]))
+                        if pair_key in seen_pairs:
+                            continue
+
+                        api1 = p1.get("api_gravity")
+                        api2 = p2.get("api_gravity")
+                        s1 = p1.get("sulphur_pct")
+                        s2 = p2.get("sulphur_pct")
+
+                        if api1 is not None and api2 is not None and s1 is not None and s2 is not None:
+                            if api1 == api2:
+                                continue
+
+                            w = (req_api - api2) / (api1 - api2)
+
+                            # Explicit bracketing/bounds check
+                            if 0.1 <= w <= 0.9:
+                                # Sulphur tolerance check
+                                blend_s = (w * s1) + ((1 - w) * s2)
+                                if abs(blend_s - req_sul) <= 1.0:
+                                    seen_pairs.add(pair_key)
+                                    w_pct = int(w * 100)
+                                    p2_pct = 100 - w_pct
+
+                                    blend_p = {
+                                        "name": f"{port1_name} ({w_pct}%) + {port2_name} ({p2_pct}%)",
+                                        "country": f"{p1.get('country')} + {p2.get('country')}",
+                                        "grade": f"{grade1} + {grade2}",
+                                        "match_type": "blend",
+                                        "match_reason": f"Blend ratio estimated via linear API gravity interpolation — a simplified model; actual refinery blending may vary.",
+                                        "is_blend": True,
+                                        "blend_components": [
+                                            {"port": p1, "weight": w},
+                                            {"port": p2, "weight": 1 - w}
+                                        ]
+                                    }
+                                    blended_ports.append(blend_p)
+
+                viable_ports = compatible_ports + blended_ports
             else:
                 # If requested grade lacks specs, just accept all as substitutes
                 for p in all_ports:
@@ -321,42 +440,113 @@ def find_alternatives(
         match_type   = port.get("match_type", "exact")
         match_reason = port.get("match_reason", "")
         port_transits = port.get("transit_chokepoints") or []
-        
-        # Missing or unmapped congestion data defaults to 0.5 (neutral)
-        raw_congestion = port.get("congestion_score")
-        congestion_score = float(raw_congestion) if raw_congestion is not None else 0.5
+        if port.get("is_blend"):
+            components = port.get("blend_components", [])
+            blend_landed_cost = 0.0
+            blend_lead_time = 0.0
+            blend_risk_score = 0.0
+            blend_extra_detour = 0.0
+            blend_congestion_scores: list[float] = []
 
-        # Step 3a — Conditional Detour Penalty
-        extra_detour = get_conditional_detour(blocked_chokepoint, port_transits)
+            for comp in components:
+                c_port = comp["port"]
+                w = comp["weight"]
 
-        # Step 4 — Lead time (searoute marine distance port -> destination)
-        port_lat = port.get("lat") or 0.0
-        port_lon = port.get("lon") or 0.0
-        if port_lat and port_lon:
-            lead_time = _compute_lead_time(
-                port_lon=port_lon, port_lat=port_lat,
-                dest_lon=dest_lon, dest_lat=dest_lat,
-                extra_detour_days=extra_detour,
-            )
+                c_transits = c_port.get("transit_chokepoints") or []
+                c_detour = get_conditional_detour(blocked_chokepoint, c_transits)
+
+                c_lat = c_port.get("lat") or 0.0
+                c_lon = c_port.get("lon") or 0.0
+                if c_lat and c_lon:
+                    c_time = _compute_lead_time(
+                        port_lon=c_lon, port_lat=c_lat,
+                        dest_lon=dest_lon, dest_lat=dest_lat,
+                        extra_detour_days=c_detour,
+                        blocked_chokepoint=blocked_chokepoint,
+                    )
+                else:
+                    c_time = round(FIXER_FALLBACK_DISTANCE_NM / NAUTICAL_MILES_PER_DAY + c_detour, 1)
+
+                c_freight = _compute_freight_premium(
+                    voyage_days=c_time,
+                    freight_index=freight_index,
+                )
+                c_cost = current_brent + c_freight
+
+                c_risk = 0.05
+                c_country = c_port.get("country", "")
+                for ev in all_events:
+                    region_str = (ev.get("region") or "").lower()
+                    summary_str = (ev.get("summary") or "").lower()
+                    if c_country.lower() in region_str or c_country.lower() in summary_str:
+                        severity = float(ev.get("severity", 0.0))
+                        confidence = float(ev.get("confidence", 0.5))
+                        # Use max(), not +=: risk reflects the worst single event,
+                        # not an accumulation that trivially caps every multi-event country at 0.95
+                        c_risk = max(c_risk, severity * confidence)
+                c_risk = min(0.95, c_risk)
+
+                c_cong_raw = c_port.get("congestion_score")
+                c_cong = float(c_cong_raw) if c_cong_raw is not None else 0.5
+
+                # Cost is proportional to blend volume; congestion is gated
+                # by the most constrained leg below.
+                blend_landed_cost += c_cost * w
+                blend_congestion_scores.append(c_cong)
+
+                # Max for risk, lead time, extra detour
+                blend_lead_time = max(blend_lead_time, c_time)
+                blend_risk_score = max(blend_risk_score, c_risk)
+                blend_extra_detour = max(blend_extra_detour, c_detour)
+
+            landed_cost = round(blend_landed_cost, 2)
+            lead_time = blend_lead_time
+            risk_score = blend_risk_score
+            congestion_score = _worst_blend_congestion(blend_congestion_scores)
+            extra_detour = blend_extra_detour
+            freight_prem = round(landed_cost - current_brent, 2)
         else:
-            # Fallback for ports without coordinates
-            lead_time = round(FIXER_FALLBACK_DISTANCE_NM / NAUTICAL_MILES_PER_DAY + extra_detour, 1)
+            # Missing or unmapped congestion data defaults to 0.5 (neutral)
+            raw_congestion = port.get("congestion_score")
+            congestion_score = float(raw_congestion) if raw_congestion is not None else 0.5
 
-        # Step 3b — Financial math (freight premium based on total lead time)
-        freight_prem = _compute_freight_premium(voyage_days=lead_time)
-        landed_cost  = round(current_brent + freight_prem, 2)
+            # Step 3a — Conditional Detour Penalty
+            extra_detour = get_conditional_detour(blocked_chokepoint, port_transits)
 
-        # Dynamic risk score based on Intelligence pipeline
-        # Baseline risk is 5%, augmented if the country appears in recent high-severity events
-        risk_score = 0.05
-        for ev in all_events:
-            region_str = (ev.get("region") or "").lower()
-            summary_str = (ev.get("summary") or "").lower()
-            if country.lower() in region_str or country.lower() in summary_str:
-                severity = float(ev.get("severity", 0.0))
-                confidence = float(ev.get("confidence", 0.5))
-                # Add risk, maxing out at 0.95
-                risk_score = min(0.95, risk_score + (severity * confidence))
+            # Step 4 — Lead time (searoute marine distance port -> destination)
+            port_lat = port.get("lat") or 0.0
+            port_lon = port.get("lon") or 0.0
+            if port_lat and port_lon:
+                lead_time = _compute_lead_time(
+                    port_lon=port_lon, port_lat=port_lat,
+                    dest_lon=dest_lon, dest_lat=dest_lat,
+                    extra_detour_days=extra_detour,
+                    blocked_chokepoint=blocked_chokepoint,
+                )
+            else:
+                # Fallback for ports without coordinates
+                lead_time = round(FIXER_FALLBACK_DISTANCE_NM / NAUTICAL_MILES_PER_DAY + extra_detour, 1)
+
+            # Step 3b — Financial math (freight premium based on total lead time)
+            freight_prem = _compute_freight_premium(
+                voyage_days=lead_time,
+                freight_index=freight_index,
+            )
+            landed_cost  = round(current_brent + freight_prem, 2)
+
+            # Dynamic risk score based on Intelligence pipeline.
+            # Baseline is 5%; we take the MAX severity*confidence across all matching events.
+            # Using += here would trivially push any country in 2+ moderate events to 0.95,
+            # producing the identical-score bucketing bug visible in the Producer Risk Matrix.
+            risk_score = 0.05
+            for ev in all_events:
+                region_str = (ev.get("region") or "").lower()
+                summary_str = (ev.get("summary") or "").lower()
+                if country.lower() in region_str or country.lower() in summary_str:
+                    severity = float(ev.get("severity", 0.0))
+                    confidence = float(ev.get("confidence", 0.5))
+                    risk_score = max(risk_score, severity * confidence)
+            risk_score = min(0.95, risk_score)
 
         # Step 5 — Composite score
         comp = _composite_score(
@@ -392,7 +582,7 @@ def find_alternatives(
 
     # ─── Step 5: Country filter (optional) ─────────────────────────────────
     stage_b_countries = list({r.get("country", "") for r in procurement_matrix if r.get("country")})
-    
+
     if excluded_countries:
         banned = {c.lower() for c in excluded_countries}
         before = len(procurement_matrix)
@@ -446,8 +636,8 @@ def find_alternatives(
     scored        = score_alternatives(legacy_routes)
 
     logger.info(
-        "fixer_agent: DONE — %d viable sources found for %s (Brent=$%.2f  extra_detour=%dd)",
-        len(procurement_matrix), blocked_chokepoint, current_brent, extra_detour,
+        "fixer_agent: DONE — %d viable sources found for %s (Brent=$%.2f)",
+        len(procurement_matrix), blocked_chokepoint, current_brent,
     )
 
     return {
@@ -464,6 +654,12 @@ def find_alternatives(
         "current_brent_usd":   current_brent,
         "freight_params": {
             "vlcc_daily_charter_usd": VLCC_DAILY_CHARTER_USD,
+            "freight_index": round(freight_index, 4),
+            "effective_daily_charter_usd": round(
+                VLCC_DAILY_CHARTER_USD
+                * (1.0 + (freight_index - 0.5) * FREIGHT_RATE_SENSITIVITY),
+                2,
+            ),
             "vlcc_cargo_barrels":     VLCC_CARGO_BARRELS,
             "vlcc_speed_knots":       VLCC_SPEED_KNOTS,
             # We no longer export a single extra_detour_days because it varies per port,
@@ -492,15 +688,26 @@ def get_chokepoint_list() -> list[str]:
 
 
 def get_crude_grade_list() -> list[str]:
-    """Return list of supported crude grades for the dashboard dropdown."""
-    return [
-        "Arab Light", "Arab Extra Light", "Arab Medium",
-        "Iranian Heavy", "Iranian Light", "Kuwait Export",
-        "Bonny Light", "Escravos",
-        "Brent", "WTI", "Urals", "Murban",
-        "Tapis", "Mexican Maya", "North Sea Blend",
-        "Eagle Ford", "Russian Sokol", "Venezuelan Merey",
-    ]
+    """Return list of supported crude grades sourced from Neo4j (with static fallback).
+
+    Querying the graph ensures this list stays in sync with seeded data —
+    adding a new CrudeGrade node will immediately appear in the UI dropdown
+    without requiring a code change.
+    """
+    driver = get_driver()
+    if driver:
+        try:
+            with driver.session() as session:
+                result = session.run("MATCH (g:CrudeGrade) RETURN g.name AS name ORDER BY g.name")
+                grades = [r["name"] for r in result]
+                if grades:
+                    return grades
+        except Exception as exc:
+            logger.warning("get_crude_grade_list: Neo4j query failed (%s), falling back to seed list.", exc)
+    # Fallback: derive from seed data so the list is always consistent with _CRUDE_GRADES
+    from src.database.neo4j_graph import _CRUDE_GRADES
+    return sorted(g["name"] for g in _CRUDE_GRADES)
+
 
 
 def get_refinery_list() -> list[str]:

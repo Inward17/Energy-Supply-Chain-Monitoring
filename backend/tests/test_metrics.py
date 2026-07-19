@@ -41,6 +41,13 @@ def test_normalise_freight_delta():
     # Zero std fallback
     assert normalise_freight_delta(50, 50, 0) == 0.5
 
+
+def test_market_normalisation_retains_extreme_tail_resolution_by_default():
+    # The default ±4.5σ window must not flatten a 3σ move and a 6σ move into
+    # the same score. Explicit ±3σ calls above remain supported for legacy use.
+    assert normalise_price_delta(103, 100, 1) < normalise_price_delta(106, 100, 1)
+    assert normalise_freight_delta(53, 50, 1) < normalise_freight_delta(56, 50, 1)
+
 def test_flow_weighted_risk():
     flows = [10.0, 20.0]
     risks = [0.2, 0.8]

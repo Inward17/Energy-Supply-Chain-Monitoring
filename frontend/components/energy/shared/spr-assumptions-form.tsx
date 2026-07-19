@@ -23,8 +23,24 @@ interface SprAssumptionsFormProps {
   hideHeader?: boolean
 }
 
-const sliderClass =
-  "h-1.5 w-full cursor-pointer appearance-none rounded-full bg-slate-700 accent-cyan-500"
+/** Track fill for the slim slider — the design shows the consumed portion of
+ *  each lever in accent against the neutral track. */
+function fillStyle(value: number, min: number, max: number): React.CSSProperties {
+  const pct = Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100))
+  return {
+    background: `linear-gradient(to right, var(--t-accent) 0%, var(--t-accent) ${pct}%, var(--t-track) ${pct}%, var(--t-track) 100%)`,
+  }
+}
+
+type Lever = {
+  label: string
+  display: string
+  min: number
+  max: number
+  step: number
+  value: number
+  apply: (n: number) => Partial<SprAssumptionsValue>
+}
 
 /** Controlled form for the four SPR model-assumption sliders.
  *  Shared by SPR Optimizer and War Room Advanced Parameters. */
@@ -32,70 +48,66 @@ export function SprAssumptionsForm({ value, onChange, hideHeader }: SprAssumptio
   const set = (patch: Partial<SprAssumptionsValue>) => onChange({ ...value, ...patch })
   const combinedCuts = value.runCut + value.indCut + value.transCut
 
+  const levers: Lever[] = [
+    {
+      // NB: this exact label is asserted on by tests/e2e/smoke.spec.ts.
+      label: "GDP Impact per Day",
+      display: `${value.gdpRate.toFixed(3)}%`,
+      min: 0.01, max: 0.1, step: 0.005, value: value.gdpRate,
+      apply: (n) => ({ gdpRate: n }),
+    },
+    {
+      label: "Refinery Run-Rate Cut",
+      display: `${value.runCut}%`,
+      min: 0, max: 50, step: 1, value: value.runCut,
+      apply: (n) => ({ runCut: n }),
+    },
+    {
+      label: "Industrial Priority Scheme",
+      display: `${value.indCut}%`,
+      min: 0, max: 50, step: 1, value: value.indCut,
+      apply: (n) => ({ indCut: n }),
+    },
+    {
+      label: "Transport Fuel Rationing",
+      display: `${value.transCut}%`,
+      min: 0, max: 50, step: 1, value: value.transCut,
+      apply: (n) => ({ transCut: n }),
+    },
+  ]
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-3.5">
       {!hideHeader && (
-        <h4 className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
+        <h4 className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">
           Model Assumptions
         </h4>
       )}
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        {/* GDP Impact */}
-        <div>
-          <div className="mb-1.5 flex items-center justify-between text-[11px] font-medium uppercase tracking-wider text-slate-400">
-            <span>GDP Impact per Day</span>
-            <span className="font-mono text-cyan-400">{value.gdpRate.toFixed(3)}%</span>
+      <div className="grid grid-cols-2 gap-x-3.5 gap-y-4 lg:grid-cols-4">
+        {levers.map((lever) => (
+          <div key={lever.label}>
+            <label className="mb-2 block text-[10px] leading-tight text-muted">
+              {lever.label}{" "}
+              <span className="font-mono tabular-nums text-accent">{lever.display}</span>
+            </label>
+            <input
+              type="range"
+              min={lever.min}
+              max={lever.max}
+              step={lever.step}
+              value={lever.value}
+              aria-label={lever.label}
+              onChange={(e) => set(lever.apply(Number(e.target.value)))}
+              style={fillStyle(lever.value, lever.min, lever.max)}
+              className="slider-slim w-full cursor-pointer"
+            />
           </div>
-          <input
-            type="range" min={0.01} max={0.1} step={0.005} value={value.gdpRate}
-            onChange={(e) => set({ gdpRate: Number(e.target.value) })}
-            className={sliderClass}
-          />
-        </div>
-
-        {/* Run-Rate Cut */}
-        <div>
-          <div className="mb-1.5 flex items-center justify-between text-[11px] font-medium uppercase tracking-wider text-slate-400">
-            <span>Refinery Run-Rate Cut</span>
-            <span className="font-mono text-cyan-400">{value.runCut}%</span>
-          </div>
-          <input
-            type="range" min={0} max={50} step={1} value={value.runCut}
-            onChange={(e) => set({ runCut: Number(e.target.value) })}
-            className={sliderClass}
-          />
-        </div>
-
-        {/* Industrial Priority */}
-        <div>
-          <div className="mb-1.5 flex items-center justify-between text-[11px] font-medium uppercase tracking-wider text-slate-400">
-            <span>Industrial Priority Scheme</span>
-            <span className="font-mono text-cyan-400">{value.indCut}%</span>
-          </div>
-          <input
-            type="range" min={0} max={50} step={1} value={value.indCut}
-            onChange={(e) => set({ indCut: Number(e.target.value) })}
-            className={sliderClass}
-          />
-        </div>
-
-        {/* Transport Rationing */}
-        <div>
-          <div className="mb-1.5 flex items-center justify-between text-[11px] font-medium uppercase tracking-wider text-slate-400">
-            <span>Transport Fuel Rationing</span>
-            <span className="font-mono text-cyan-400">{value.transCut}%</span>
-          </div>
-          <input
-            type="range" min={0} max={50} step={1} value={value.transCut}
-            onChange={(e) => set({ transCut: Number(e.target.value) })}
-            className={sliderClass}
-          />
-        </div>
+        ))}
       </div>
 
       {combinedCuts > 60 && (
-        <div className="rounded border border-orange-500/40 bg-orange-500/10 p-3 text-xs text-orange-300">
+        <div className="rounded border border-orange/40 bg-orange-soft p-3 text-xs text-orange">
           ⚠️ Combined demand cuts ({combinedCuts}%) exceed typical operational limits.
         </div>
       )}

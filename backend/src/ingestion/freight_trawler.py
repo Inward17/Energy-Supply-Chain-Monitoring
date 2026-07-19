@@ -11,14 +11,15 @@ macro indicator for global shipping costs.
 from __future__ import annotations
 
 import logging
+import statistics
 from datetime import date, timedelta
 from typing import Any
 
 import yfinance as yf
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-from src.database.postgres_db import upsert_price
-from src.utils.constants import MARKET_HISTORY_PERIOD, BRENT_STATS_PERIOD
+from src.database.postgres_db import fetch_latest_prices, upsert_price
+from src.utils.constants import MARKET_HISTORY_PERIOD
 
 logger = logging.getLogger(__name__)
 
@@ -126,28 +127,29 @@ def fetch_historical_prices(start_date: str, end_date: str) -> dict[str, int]:
     return results
 
 
-def get_freight_rolling_stats() -> dict[str, float]:
+def get_freight_rolling_stats() -> dict[str, Any]:
     """
     Return the current freight price, rolling mean, and std deviation.
     Used by modeler_agent for ΔP_freight normalisation.
     """
-    try:
-        df = yf.download(FREIGHT_TICKER, period=BRENT_STATS_PERIOD, progress=False, auto_adjust=True)
-        if df.empty:
-            return {"current_price": 0.0, "rolling_mean": 0.0, "rolling_std": 0.0}
-
-        if hasattr(df.columns, "levels"):
-            df.columns = df.columns.get_level_values(0)
-
-        closes = df["Close"].dropna().astype(float)
-        if closes.empty:
-            return {"current_price": 0.0, "rolling_mean": 0.0, "rolling_std": 0.0}
-
+    rows = fetch_latest_prices(tickers=[FREIGHT_TICKER], days=60)
+    valid = [row for row in rows if row.get("price_close") is not None]
+    valid.sort(key=lambda row: str(row.get("trade_date", "")), reverse=True)
+    window = valid[:30]
+    if not window:
         return {
-            "current_price": round(float(closes.iloc[-1]), 2),
-            "rolling_mean":  round(float(closes.rolling(30).mean().iloc[-1]), 2) if len(closes) >= 30 else round(float(closes.mean()), 2),
-            "rolling_std":   round(float(closes.rolling(30).std().iloc[-1]), 2) if len(closes) >= 30 else (round(float(closes.std()), 2) if len(closes) > 1 else 0.0),
+            "current_price": 0.0,
+            "rolling_mean": 0.0,
+            "rolling_std": 0.0,
+            "latest_date": None,
+            "status": "unavailable",
         }
-    except Exception as exc:
-        logger.error("Failed to fetch freight stats: %s", exc)
-        return {"current_price": 0.0, "rolling_mean": 0.0, "rolling_std": 0.0}
+
+    closes = [float(row["price_close"]) for row in window]
+    return {
+        "current_price": round(closes[0], 2),
+        "rolling_mean": round(statistics.fmean(closes), 2),
+        "rolling_std": round(statistics.stdev(closes), 2) if len(closes) > 1 else 0.0,
+        "latest_date": str(window[0].get("trade_date", "")),
+        "status": "available",
+    }

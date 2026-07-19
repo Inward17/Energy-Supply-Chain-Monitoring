@@ -3,6 +3,8 @@
 import { MapContainer, TileLayer, CircleMarker, Popup, Circle } from "react-leaflet"
 import "leaflet/dist/leaflet.css"
 import type { VesselPosition, RiskEvent } from "@/lib/api"
+import { useTheme } from "@/components/theme-provider"
+import { useChartTheme, severityHex } from "../chart-theme"
 
 interface DynamicMapProps {
   vessels: VesselPosition[]
@@ -23,35 +25,48 @@ const CHOKEPOINT_COORDS: Record<string, [number, number]> = {
 import type { LatLngBoundsExpression } from "leaflet"
 
 export default function DynamicMap({ vessels, events }: DynamicMapProps) {
+  const { theme } = useTheme()
+  const c = useChartTheme()
   const maxBounds: LatLngBoundsExpression = [
     [-90, -180],
     [90, 180],
   ]
 
+  const tileUrl =
+    theme === "dark"
+      ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"
+      : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"
+
+  // Light basemap tiles are higher-contrast, so the risk circles need a little
+  // more fill to stay as legible as they are over the dark basemap.
+  const riskFillOpacity = theme === "dark" ? 0.2 : 0.25
+
   return (
-    <MapContainer 
-      center={[25.0, 50.0]} 
-      zoom={3} 
+    <MapContainer
+      center={[25.0, 50.0]}
+      zoom={3}
       minZoom={2.5}
       maxBounds={maxBounds}
       maxBoundsViscosity={1.0}
-      style={{ height: "100%", minHeight: "540px", width: "100%", background: "#020617", position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
+      style={{ height: "100%", minHeight: "540px", width: "100%", background: "var(--t-map-bg)", position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
       zoomControl={false}
       attributionControl={false}
     >
+      {/* `key` remounts only the tile layer on theme change so stale tiles are
+          dropped cleanly. The MapContainer must NOT be keyed — that would reset
+          the user's pan/zoom. */}
       <TileLayer
-        url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"
+        key={tileUrl}
+        url={tileUrl}
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
         noWrap={true}
         bounds={maxBounds}
       />
-      
+
       {/* Risk Events / Heatmaps */}
       {events.flatMap((ev) => {
-        const color = ev.severity_label === "CRITICAL" ? "#e11d48" : 
-                      ev.severity_label === "HIGH" ? "#f97316" : 
-                      ev.severity_label === "MODERATE" ? "#eab308" : "#3b82f6"
-                      
+        const color = severityHex(ev.severity_label, c)
+
         return (ev.affected_chokepoints || []).map((cp) => {
           const center = CHOKEPOINT_COORDS[cp]
           if (!center) return null
@@ -61,7 +76,7 @@ export default function DynamicMap({ vessels, events }: DynamicMapProps) {
               key={`event-${ev.id}-${cp}`} 
               center={center} 
               radius={300000 * ev.severity} 
-              pathOptions={{ color, fillColor: color, fillOpacity: 0.2, weight: 1 }}
+              pathOptions={{ color, fillColor: color, fillOpacity: riskFillOpacity, weight: 1 }}
             >
               <Popup>
                 <strong>{ev.region}</strong><br/>
@@ -80,7 +95,7 @@ export default function DynamicMap({ vessels, events }: DynamicMapProps) {
           key={`vessel-${v.mmsi || i}`}
           center={[v.lat, v.lon]}
           radius={2}
-          pathOptions={{ color: "#22d3ee", fillColor: "#22d3ee", fillOpacity: 0.8, weight: 0 }}
+          pathOptions={{ color: c.accent, fillColor: c.accent, fillOpacity: 0.8, weight: 0 }}
         >
           <Popup>
             <strong>{v.vessel_name}</strong><br/>

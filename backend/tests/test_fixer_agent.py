@@ -2,6 +2,8 @@ import pytest
 from src.agents.fixer_agent import (
     find_alternatives,
     _compute_freight_premium,
+    _compute_lead_time,
+    _worst_blend_congestion,
     get_conditional_detour,
     _composite_score
 )
@@ -12,6 +14,33 @@ def test_compute_freight_premium():
     # Example: 10 days voyage
     expected = round((VLCC_DAILY_CHARTER_USD * 10) / VLCC_CARGO_BARRELS, 2)
     assert _compute_freight_premium(10) == expected
+
+
+def test_freight_premium_tracks_live_freight_stress_symmetrically():
+    calm = _compute_freight_premium(10, freight_index=0.3)
+    neutral = _compute_freight_premium(10, freight_index=0.5)
+    stressed = _compute_freight_premium(10, freight_index=0.8)
+
+    assert calm < neutral < stressed
+
+
+def test_blend_congestion_uses_worst_required_leg():
+    assert _worst_blend_congestion([0.1, 0.9]) == 0.9
+
+
+def test_suez_detour_uses_route_engine_restriction():
+    # Rotterdam -> Jamnagar: avoiding Suez sends the route around the Cape.
+    direct = _compute_lead_time(4.48, 51.92, 69.85, 22.30)
+    restricted = _compute_lead_time(
+        4.48,
+        51.92,
+        69.85,
+        22.30,
+        extra_detour_days=14,
+        blocked_chokepoint="Suez Canal",
+    )
+
+    assert restricted > direct + 10
 
 def test_get_conditional_detour():
     # Suez Canal blockade

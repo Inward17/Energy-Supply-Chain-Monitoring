@@ -35,6 +35,15 @@ logger = logging.getLogger(__name__)
 
 AISSTREAM_URI = "wss://stream.aisstream.io/v0/stream"
 
+# AIS broadcasts position reports every few seconds but ship *type* only in
+# Type-5 (ShipStaticData) messages, roughly every 6 minutes. A snapshot shorter
+# than that period types only ~window/360 of the vessels it sees, which is why
+# 120s yielded ~33% type coverage and left the SDI vessel-density term (25% of
+# the index) permanently disabled by its 70%-coverage gate. Types are persisted
+# to vessel_type_registry, so coverage compounds across cycles.
+DEFAULT_SNAPSHOT_SECONDS = 600
+AIS_STATIC_BROADCAST_PERIOD_SECONDS = 360
+
 # ---------------------------------------------------------------------------
 # Bounding Boxes for Strategic Chokepoints
 # ---------------------------------------------------------------------------
@@ -184,22 +193,38 @@ def snapshot_vessels(duration_seconds: int | None = None) -> int:
                        "Threat Map will show last-known seed data positions.")
         return 0
 
-    secs = duration_seconds or int(os.getenv("AIS_SNAPSHOT_SECONDS", "120"))
+    secs = duration_seconds or int(os.getenv("AIS_SNAPSHOT_SECONDS", str(DEFAULT_SNAPSHOT_SECONDS)))
     buffer: list[dict[str, Any]] = []
     ship_types_cache = fetch_vessel_types()
     new_ship_types: list[dict[str, Any]] = []
 
+    # The in-loop deadline is only evaluated when a message arrives, so a stalled
+    # socket could otherwise block the cron worker for the whole window. Cap it.
+    async def _collect() -> None:
+        try:
+            await asyncio.wait_for(
+                _stream_snapshot(api_key, secs, buffer, ship_types_cache, new_ship_types),
+                timeout=secs + 30,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "AISStream: snapshot exceeded %ds budget; keeping %d records collected so far.",
+                secs + 30,
+                len(buffer),
+            )
+
     # Run async collection synchronously
     try:
-        asyncio.run(_stream_snapshot(api_key, secs, buffer, ship_types_cache, new_ship_types))
+        asyncio.run(_collect())
     except RuntimeError:
         # Already inside an event loop (e.g. Jupyter); use nest_asyncio or thread
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        loop.run_until_complete(_stream_snapshot(api_key, secs, buffer, ship_types_cache, new_ship_types))
+        loop.run_until_complete(_collect())
 
     if new_ship_types:
         upsert_vessel_types(new_ship_types)
+        logger.info("ais_streamer: learned %d new ship types.", len(new_ship_types))
 
     if not buffer:
         logger.info("AISStream: no vessel records collected in this snapshot.")
@@ -209,8 +234,27 @@ def snapshot_vessels(duration_seconds: int | None = None) -> int:
     for rec in buffer:
         rec["ship_type"] = ship_types_cache.get(rec["mmsi"])
 
+    # Type coverage gates the SDI vessel-density term (needs 70%), so log it —
+    # a persistently low value means the snapshot window is too short.
+    typed = sum(1 for rec in buffer if rec["ship_type"] is not None)
+    coverage = typed / len(buffer) if buffer else 0.0
+
     stored = upsert_vessel(buffer)
-    logger.info("ais_streamer: %d vessel records stored (%d collected).", stored, len(buffer))
+    logger.info(
+        "ais_streamer: %d vessel records stored (%d collected, %.0f%% ship-type coverage).",
+        stored,
+        len(buffer),
+        coverage * 100,
+    )
+    if coverage < 0.70:
+        logger.warning(
+            "ais_streamer: ship-type coverage %.0f%% is below the 70%% gate — the SDI "
+            "vessel-density term will stay disabled. Consider raising AIS_SNAPSHOT_SECONDS "
+            "(currently %ds; static broadcasts are ~%ds apart).",
+            coverage * 100,
+            secs,
+            AIS_STATIC_BROADCAST_PERIOD_SECONDS,
+        )
     return stored
 
 

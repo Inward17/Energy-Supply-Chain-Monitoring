@@ -143,3 +143,23 @@ frontend/yarn-error.log*
 
 # pnpm lock (large; regenerated on install)
 pnpm-lock.yaml
+
+# TypeScript incremental build cache — regenerated on every build and
+# otherwise shows up as a diff in unrelated commits.
+frontend/tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# Playwright output
+frontend/playwright-report/
+frontend/test-results/
+
+# Editor / agent tooling. launch.json is shared (it defines how to start the
+# dev server); local overrides and session state are not.
+.claude/settings.local.json
+.claude/sessions/
+.claude/plans/
+
+# Scratch files
+*.orig
+*.rej
+_tmp_*

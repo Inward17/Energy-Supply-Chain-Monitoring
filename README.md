@@ -109,7 +109,8 @@ Every external API is hit **only in the background** (cron_worker.py). The React
 | ORM/DB | SQLAlchemy + psycopg2 | Connection pooling, query abstraction |
 | Marine Routing | `searoute` | Real nautical distance calculations |
 | Financial Data | `yfinance` | Brent Crude, NG, USO, XLE prices |
-| News Data | GDELT Doc 2.0 API | Global event news headlines (free, no auth) |
+| News Data | GDELT Doc 2.0 API | Primary headline source (free, no auth) |
+| News Fallback | NewsData.io / GNews / NewsAPI | Take over when GDELT rate-limits |
 | Vessel Data | AISStream.io WebSocket | Live AIS tanker positions |
 | Resilience | `tenacity` | Exponential backoff on all external APIs |
 | Scheduling | `schedule` | Cron loop for the ingestion pipeline |
@@ -238,7 +239,13 @@ Queries the **GDELT Doc 2.0 API** (free, no auth) for energy-relevant news.
 - **Query**: searches for `"Strait of Hormuz" OR "Suez Canal" OR "crude oil" OR "oil tanker"` etc.
 - **Credibility Tiering**: Prioritizes high-credibility global (60%) and industry (20%) sources (e.g., Reuters, Bloomberg, OilPrice).
 - **Deduplication**: inserts only new URLs using `ON CONFLICT DO NOTHING`
-- **Rate limiting**: GDELT throttles to ~1 req/sec; tenacity retries on 429 errors
+- **Rate limiting**: GDELT throttles hard per IP. A 429 is *not* retried in-cycle
+  (that extends the block); the next scheduled cycle is the retry, and the
+  keyed providers in `news_providers.py` cover the gap
+- **Query rotation**: three queries alternate across cycles — A (maritime
+  chokepoints), B (producer-nation supply events), C (physical disruption:
+  storm / fire / piracy / strike). Without C, four of the Sentinel's nine
+  disruption types were unreachable
 - **Output**: Raw article records stored in `news_cache` with `processed=False`
 
 ---
@@ -258,7 +265,11 @@ Connects to **AISStream.io WebSocket** and collects tanker positions in 6 strate
 | Turkish Straits | 40.5°–41.5°N, 28.5°–30°E |
 | Cape of Good Hope | 36°–32°S, 17°–21°E |
 
-- Collects for `AIS_SNAPSHOT_SECONDS` (default 120s) then disconnects cleanly
+- Collects for `AIS_SNAPSHOT_SECONDS` (default 600s) then disconnects cleanly.
+  Ship *type* arrives only in Type-5 (ShipStaticData) messages broadcast roughly
+  every 6 minutes, while positions arrive every few seconds — a window shorter
+  than that classifies only ~window/360 of vessels. Learned types are persisted
+  to `vessel_type_registry` so coverage compounds across cycles.
 - Filters garbage coordinates (0,0) and validates lat/lon bounds
 - Assigns a human-readable `region` label based on which bounding box the vessel is in
 - Output stored in `vessel_telemetry` table with MMSI, position, speed, heading
@@ -365,15 +376,48 @@ SDI = w1·P_risk + w2·ΔD_vessel + w3·ΔP_price + w4·ΔP_freight
 
 Where:
   P_risk     = Gemini Sentinel severity score (0–1)
-  ΔD_vessel  = AIS vessel count deviation from baseline (0–1)
+  ΔD_vessel  = tanker-share drop vs a self-calibrated baseline (0–1)
   ΔP_price   = Brent price z-score vs 30-day mean (0–1)
   ΔP_freight = BOAT ETF price z-score vs 30-day mean (0–1)
-  w1=0.40, w2=0.25, w3=0.15, w4=0.20  (overridable via SDI_W1/W2/W3/W4 env vars)
+  w1=0.50, w2=0.25, w3=0.10, w4=0.15  (overridable via SDI_W1/W2/W3/W4 env vars)
+
+Geopolitical risk carries half the index because it is the leading indicator.
+At w1=0.40 a severe chokepoint incident could not lift the headline out of the
+"moderate" band while markets stayed calm. The reallocation came from the two
+market terms rather than vessel density: price and freight are lagging/derived
+signals, whereas vessel movement is direct physical evidence.
+
+The composite is also banded (`SDI_BANDS` in constants.py) — LOW / MODERATE /
+ELEVATED / SEVERE / CRITICAL — and the dashboard colours the headline from the
+band rather than a local threshold.
 ```
 
 - `compute_current_sdi()` — real-time global risk snapshot for the dashboard header
 - `compute_chokepoint_risk_matrix()` — per-chokepoint breakdown with vessel counts and price impact
 - `score_alternatives()` — resilience scoring for a set of rerouted alternatives
+
+**Vessel density is self-calibrating.** The baseline for a region is the median
+of *its own* recent readings, pulled from the same query as the live value, so
+partial AIS coverage biases both sides equally and cancels. It replaced a
+hand-maintained table of vessel counts that required ≥70% ship-type coverage to
+be trusted — a bar the collector could not clear, leaving 25% of the index
+permanently dead.
+
+The measured quantity is **tanker share** (`tankers / typed`), not a corrected
+count. A share is invariant to both AIS type coverage and the collector's
+snapshot window, whereas a raw count moves with either. On live data it was the
+more stable baseline in every region (e.g. Malacca CV 0.76 → 0.42).
+
+*Trade-off:* a uniform collapse of **all** traffic leaves the share unchanged.
+This detects the realistic case — tankers rerouting while other shipping
+continues — not a total port shutdown.
+
+---
+
+**Important limitation:** The `0.70` producer-to-chokepoint transit-inference
+discount is applied uniformly across producer/chokepoint pairs. It does not
+yet model each producer's actual route concentration; that refinement awaits a
+reliable trade-flow data integration.
 
 ---
 
@@ -480,11 +524,50 @@ Weights (`w1`, `w2`, `w3`, `w4`) are overridable via `SDI_W1`–`SDI_W4` environ
 | # | Tab | Description |
 |---|---|---|
 | 1 | 🌍 **Threat Map** | Interactive Leaflet map displaying live vessel positions and a chokepoint risk heatmap |
-| 2 | 🔴 **Risk Intelligence** | Gemini-scored event feed with SDI timeline chart |
-| 3 | 📈 **Market Pulse** | Brent/NG/XLE candlestick charts + price impact KPI cards |
+| 2 | 🔴 **Risk Intelligence** | Four equal panels: Sentinel event feed, SDI timeline, chokepoint risk matrix, producer risk matrix |
+| 3 | 📈 **Market Pulse** | Brent/NG/XLE charts + 60-day high/low and price-impact KPI cards |
 | 4 | 🔀 **Reroute Matrix** | Interactive 5-step procurement analysis — select a blocked chokepoint and destination refinery to get a ranked table of alternative crude sources |
 | 5 | 🛢️ **SPR Optimizer** | SPR burn-down simulator with Recharts graph, demand management playbook, and GDP/inflation impact |
 | 6 | ⚔️ **War Room** | One-click crisis scenario simulator — selects a scenario, runs the full pipeline, and generates an AI-written Executive Action Plan |
+| 7 | ⏮️ **Historical Validation** | Backtest job manager plus lead-time validation against past crises |
+
+### Score drill-downs
+
+Every row in the Sentinel feed, the chokepoint matrix and the producer matrix
+opens a detail modal explaining **why** that score was assigned. Because risk
+aggregates by `max` rather than by sum, exactly one event sets each score; the
+modal names that driver, lists the other contenders, and shows the arithmetic
+behind each contribution:
+
+```text
+0.588   severity 0.84  × 0.7 discount  · decayed over 26.2h
+        "export routes cross Strait of Hormuz"
+```
+
+Chokepoint and producer modals also locate the subject on a small map, with the
+halo scaled to its risk score.
+
+---
+
+## Design System
+
+The UI runs on the MERIDIAN design tokens defined in `app/globals.css`, with a
+persisted light/dark toggle in the header.
+
+- **Tokens.** ~26 semantic tokens (`bg`, `panel`, `border`, `hair`, `fg`,
+  `muted`, `accent`, `crit`, `safe`, `warn`, `orange` …) declared under
+  `@theme inline`. The `inline` matters: with a plain `@theme`, Tailwind
+  resolves the indirection in `:root` scope and the `.dark` overrides never
+  take effect.
+- **Soft fills are pre-mixed.** Use `bg-crit-soft`, never `bg-crit/15` — the
+  alpha differs per theme and an opacity modifier washes out in light mode.
+- **Theme switching** is a class on `<html>`, applied by an inline script in
+  `<head>` before first paint so there is no flash. System preference is
+  resolved into a real class rather than a `prefers-color-scheme` block, which
+  keeps the CSS variables and the `dark:` variant from ever disagreeing.
+- **Charts and Leaflet** take colours as props, not classes, so they read from
+  `useChartTheme()` (`components/energy/chart-theme.ts`), which mirrors the CSS
+  tokens as resolved hex. Keep the two in sync.
 
 ---
 
@@ -662,19 +745,38 @@ NEO4J_PASSWORD=your_password     # Required — Reroute Matrix won't work withou
 #               All historical data, charts, and deterministic models still work.
 GEMINI_API_KEY=your_gemini_api_key
 
+# Optional pool of extra keys (comma-separated). The free tier caps requests
+# per key, so a 429/RESOURCE_EXHAUSTED rotates to the next key immediately
+# rather than stalling scoring until the quota window resets.
+GEMINI_API_KEYS=
+
+# Note: gemini-2.5-flash returns 404 for API accounts created after Google
+# restricted it, so a mixed-age key pool must standardise on an alias every
+# key can call. One model across all keys also keeps severity calibrated.
+GEMINI_MODEL=gemini-flash-latest
+
+# ── News fallback providers (used when GDELT is rate-limited) ──────────────
+# Tried freshest-first; daily usage is tracked in the provider_quota table so
+# budgets survive a worker restart.
+NEWSDATA_API_KEY=            # 200 req/day, real-time
+GNEWS_API_KEY=               # 100 req/day, ~12h delay
+NEWSAPI_API_KEY=             # 100 req/day, ~24h delay, non-commercial only
+GDELT_TIMESPAN=12h           # Lookback per GDELT call
+
 # ── AISStream.io ───────────────────────────────────────────────────────────
 # Get free key instantly: https://aisstream.io
 # Without this: Threat Map shows last-known vessel positions from seed data.
 AISSTREAM_API_KEY=your_aisstream_key
 
 # ── SDI Formula Weights (must sum exactly to 1.0) ─────────────────────────
-SDI_W1=0.40    # Gemini geopolitical risk score
+SDI_W1=0.50    # Gemini geopolitical risk score
 SDI_W2=0.25    # Vessel density anomaly (AIS)
-SDI_W3=0.15    # Brent crude price deviation
-SDI_W4=0.20    # Freight cost deviation (BOAT ETF)
+SDI_W3=0.10    # Brent crude price deviation
+SDI_W4=0.15    # Freight cost deviation (BOAT ETF)
 
 # ── Cron Worker ────────────────────────────────────────────────────────────
 CRON_INTERVAL_MINUTES=60     # Background refresh interval
-AIS_SNAPSHOT_SECONDS=120     # How long to collect AIS data per cron cycle
+AIS_SNAPSHOT_SECONDS=600     # How long to collect AIS data per cron cycle.
+                             # Must exceed the ~360s AIS Type-5 broadcast
+                             # period or most vessels are never type-classified.
 ```
-

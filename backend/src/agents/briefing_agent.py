@@ -11,6 +11,7 @@ import os
 from google import genai
 from google.genai import types
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from src.utils.constants import SENTINEL_GEMINI_MODEL
 
 def generate_emergency_brief(scenario_name, target_refinery, spr_data, reroute_df):
     """
@@ -72,7 +73,7 @@ def generate_emergency_brief(scenario_name, target_refinery, spr_data, reroute_d
     )
     def _generate():
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model=SENTINEL_GEMINI_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0.3,

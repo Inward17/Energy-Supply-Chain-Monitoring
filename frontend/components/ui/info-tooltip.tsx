@@ -64,8 +64,8 @@ export function InfoTooltip({ term, label }: InfoTooltipProps) {
         onMouseEnter={() => setOpen(true)}
         onMouseLeave={() => setOpen(false)}
       >
-        <span className="underline decoration-slate-500/50 decoration-dashed underline-offset-4">{label || term}</span>
-        <Info className="h-3 w-3 text-slate-500" />
+        <span className="underline decoration-muted/50 decoration-dashed underline-offset-4">{label || term}</span>
+        <Info className="h-3 w-3 text-muted" />
       </div>
       
       {/* Tooltip Content in Portal */}
@@ -74,11 +74,11 @@ export function InfoTooltip({ term, label }: InfoTooltipProps) {
           className="pointer-events-none fixed z-[9999] mb-2 w-64 -translate-x-1/2 -translate-y-full"
           style={{ left: coords.left, top: coords.top }}
         >
-          <div className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-xs font-normal text-slate-300 shadow-xl">
-            <strong className="block text-slate-200 mb-1">{term}</strong>
+          <div className="rounded-md border border-border bg-panel px-3 py-2 text-xs font-normal text-fg shadow-xl">
+            <strong className="mb-1 block text-head">{term}</strong>
             {definition}
             {/* Arrow */}
-            <div className="absolute -bottom-1.5 left-1/2 -ml-1.5 h-3 w-3 rotate-45 border-b border-r border-slate-700 bg-slate-900" />
+            <div className="absolute -bottom-1.5 left-1/2 -ml-1.5 h-3 w-3 rotate-45 border-b border-r border-border bg-panel" />
           </div>
         </div>,
         document.body

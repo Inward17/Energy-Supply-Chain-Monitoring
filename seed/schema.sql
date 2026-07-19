@@ -8,7 +8,8 @@ CREATE TABLE IF NOT EXISTS news_cache (
     title      TEXT,
     source     TEXT,
     fetched_at TIMESTAMPTZ DEFAULT NOW(),
-    processed  BOOLEAN DEFAULT FALSE
+    processed  BOOLEAN DEFAULT FALSE,
+    article_category TEXT DEFAULT 'general'
 );
 
 CREATE TABLE IF NOT EXISTS vessel_telemetry (
@@ -50,11 +51,36 @@ CREATE TABLE IF NOT EXISTS risk_events (
     disruption_type      TEXT,
     severity             DOUBLE PRECISION,
     affected_chokepoints TEXT[],
+    directly_affected_chokepoints TEXT[],
+    affected_producer_countries TEXT[],
+    directly_affected_producer_countries TEXT[],
     confidence           DOUBLE PRECISION,
     summary              TEXT,
     sdi_score            DOUBLE PRECISION,
     source_urls          TEXT[],
+    source_fetched_at    TIMESTAMPTZ,
+    severity_reasoning   TEXT,
+    article_category     TEXT DEFAULT 'general',
     created_at           TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS sdi_snapshots (
+    id                 SERIAL PRIMARY KEY,
+    sdi_score          DOUBLE PRECISION NOT NULL,
+    p_risk             DOUBLE PRECISION NOT NULL,
+    delta_d            DOUBLE PRECISION NOT NULL,
+    delta_p            DOUBLE PRECISION NOT NULL,
+    delta_f            DOUBLE PRECISION NOT NULL,
+    confidence_low     DOUBLE PRECISION,
+    confidence_high    DOUBLE PRECISION,
+    top_region         TEXT,
+    top_chokepoints    TEXT[],
+    event_source_at    TIMESTAMPTZ,
+    vessel_source_at   TIMESTAMPTZ,
+    market_source_date DATE,
+    ais_status         TEXT,
+    market_status      TEXT,
+    computed_at        TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS risk_events_backtest (
@@ -64,9 +90,11 @@ CREATE TABLE IF NOT EXISTS risk_events_backtest (
     disruption_type      TEXT,
     severity             DOUBLE PRECISION,
     affected_chokepoints TEXT[],
+    affected_producer_countries TEXT[],
     confidence           DOUBLE PRECISION,
     summary              TEXT,
     sdi_score            DOUBLE PRECISION,
+    severity_reasoning   TEXT,
     created_at           TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -86,4 +114,6 @@ CREATE INDEX IF NOT EXISTS idx_news_processed ON news_cache (processed, fetched_
 CREATE INDEX IF NOT EXISTS idx_vessel_region  ON vessel_telemetry (region, recorded_at DESC);
 CREATE INDEX IF NOT EXISTS idx_prices_ticker  ON market_prices (ticker, trade_date DESC);
 CREATE INDEX IF NOT EXISTS idx_risk_severity  ON risk_events (severity DESC, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_risk_source    ON risk_events (source_fetched_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sdi_computed   ON sdi_snapshots (computed_at DESC);
 CREATE INDEX IF NOT EXISTS idx_risk_bt_event  ON risk_events_backtest (event_name, created_at DESC);

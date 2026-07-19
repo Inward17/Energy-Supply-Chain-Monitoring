@@ -1,14 +1,35 @@
 import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
-import { Geist, Geist_Mono } from 'next/font/google'
+import { Archivo, IBM_Plex_Mono } from 'next/font/google'
 import './globals.css'
 import 'leaflet/dist/leaflet.css'
+import { ThemeProvider } from '@/components/theme-provider'
 
-const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] })
-const geistMono = Geist_Mono({
-  variable: '--font-geist-mono',
+const archivo = Archivo({
+  variable: '--font-archivo',
   subsets: ['latin'],
+  weight: ['400', '500', '600', '700', '800', '900'],
+  display: 'swap',
 })
+
+const plexMono = IBM_Plex_Mono({
+  variable: '--font-plex-mono',
+  subsets: ['latin'],
+  weight: ['400', '500', '600'],
+  display: 'swap',
+})
+
+// Runs synchronously in <head> before first paint, so the correct theme class is
+// on <html> before anything renders (no flash). Resolving system preference into
+// a real class here — rather than via a prefers-color-scheme media block — is
+// what keeps the CSS variables and the `dark:` variant from ever disagreeing.
+const THEME_INIT_SCRIPT = `(function(){try{
+var s=localStorage.getItem('meridian-theme');
+var d=s?s==='dark':window.matchMedia('(prefers-color-scheme: dark)').matches;
+var e=document.documentElement;
+e.classList.toggle('dark',d);e.classList.toggle('light',!d);
+e.style.colorScheme=d?'dark':'light';
+}catch(_){document.documentElement.classList.add('dark')}})()`
 
 export const metadata: Metadata = {
   title: 'Energy Supply Chain Resilience OS',
@@ -37,8 +58,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   colorScheme: 'light dark',
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: 'white' },
-    { media: '(prefers-color-scheme: dark)', color: 'black' },
+    { media: '(prefers-color-scheme: light)', color: '#f4f2ee' },
+    { media: '(prefers-color-scheme: dark)', color: '#0b0f16' },
   ],
 }
 
@@ -48,9 +69,16 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className={`dark ${geistSans.variable} ${geistMono.variable}`}>
-      <body className="bg-slate-950 font-sans antialiased">
-        {children}
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={`${archivo.variable} ${plexMono.variable}`}
+    >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
+      <body className="font-sans antialiased">
+        <ThemeProvider>{children}</ThemeProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>

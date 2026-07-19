@@ -16,6 +16,7 @@ import os
 import math
 from typing import Sequence
 from dotenv import load_dotenv
+from src.utils.constants import MARKET_Z_CLIP_SIGMAS
 
 load_dotenv(override=True)
 
@@ -23,10 +24,15 @@ load_dotenv(override=True)
 # ---------------------------------------------------------------------------
 # Default weight coefficients (overridable via .env)
 # ---------------------------------------------------------------------------
-_W1 = float(os.getenv("SDI_W1", "0.40"))  # Gemini risk score weight
+# Geopolitical risk carries half the index: it is the leading indicator, and at
+# 0.40 a severe chokepoint incident could not lift the headline out of the
+# "moderate" range while markets stayed calm. The 0.10 was taken from the two
+# market terms rather than from vessel density, because price and freight are
+# lagging/derived signals whereas vessel movement is direct physical evidence.
+_W1 = float(os.getenv("SDI_W1", "0.50"))  # Gemini risk score weight
 _W2 = float(os.getenv("SDI_W2", "0.25"))  # Vessel density divergence weight
-_W3 = float(os.getenv("SDI_W3", "0.15"))  # Price delta weight
-_W4 = float(os.getenv("SDI_W4", "0.20"))  # Freight cost delta weight
+_W3 = float(os.getenv("SDI_W3", "0.10"))  # Price delta weight
+_W4 = float(os.getenv("SDI_W4", "0.15"))  # Freight cost delta weight
 
 
 # ---------------------------------------------------------------------------
@@ -95,7 +101,7 @@ def normalise_price_delta(
     current_price: float,
     rolling_mean: float,
     rolling_std: float,
-    clip_sigmas: float = 3.0,
+    clip_sigmas: float = MARKET_Z_CLIP_SIGMAS,
 ) -> float:
     """
     Z-score normalise a price change and clip to [0, 1].
@@ -122,7 +128,7 @@ def normalise_freight_delta(
     current_freight: float,
     rolling_mean: float,
     rolling_std: float,
-    clip_sigmas: float = 3.0,
+    clip_sigmas: float = MARKET_Z_CLIP_SIGMAS,
 ) -> float:
     """
     Z-score normalise a freight price change and clip to [0, 1].

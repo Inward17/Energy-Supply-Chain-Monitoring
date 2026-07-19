@@ -602,16 +602,16 @@ def find_export_ports_bypassing(
                            p.current_congestion_score AS congestion_score,
                            [(p)-[:SHIPS_THROUGH]->(c) | c.name] AS transit_chokepoints
                     ORDER BY p.baseline_days_to_india ASC
-                    LIMIT 10
+                    LIMIT 50
                     """,
                     blocked=blocked_chokepoint,
                 )
             records = result.data()
 
         if not records:
-            # Grade not available from any unblocked port — widen search
-            logger.info("No export ports found for grade=%s bypassing %s — widening.", grade, blocked_chokepoint)
-            return _FALLBACK_EXPORT_PORTS.get(blocked_chokepoint, [])
+            # Grade not available from any unblocked port
+            logger.info("No export ports found for grade=%s bypassing %s.", grade, blocked_chokepoint)
+            return []
 
         return records
 

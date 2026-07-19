@@ -40,3 +40,14 @@ def test_calculate_spr_impact_custom_shortfall():
     # Gap = 30 - 39 = 0
     assert result["survival_days"] == 39.0
     assert result["supply_gap_days"] == 0.0
+
+
+def test_no_shortfall_marks_survival_sentinel_as_unlimited():
+    result = calculate_spr_impact(
+        lead_time_days=30.0,
+        blocked_chokepoint="Custom",
+        disrupted_volume_mbpd=0.0,
+    )
+
+    assert result["survival_days"] == 999.0
+    assert result["survival_days_is_unlimited"] is True

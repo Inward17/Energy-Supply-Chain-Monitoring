@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { Droplet, Gauge, Loader, GitCompare } from "lucide-react"
+import { Gauge, Loader, GitCompare } from "lucide-react"
 import {
   CartesianGrid,
   Line,
@@ -17,6 +17,7 @@ import { Panel, StatChip } from "../ui"
 import { InfoTooltip } from "@/components/ui/info-tooltip"
 import { fetchSpr, fetchChokepoints, type SprResult } from "@/lib/api"
 import { chartTooltip } from "../chart-tooltip"
+import { useChartTheme } from "../chart-theme"
 import { demandPlaybook, sprSites } from "../data"
 import { SprAssumptionsForm, SPR_ASSUMPTIONS_DEFAULTS, type SprAssumptionsValue } from "../shared/spr-assumptions-form"
 
@@ -28,6 +29,7 @@ const INDIA_SPR_SITES = [
 
 export function SprOptimizer() {
   const [chokepoints, setChokepoints] = useState<string[]>([])
+  const c = useChartTheme()
   const [blocked, setBlocked]         = useState("")
   const [leadTime, setLeadTime]       = useState(14)
   const [assumptions, setAssumptions] = useState<SprAssumptionsValue>(SPR_ASSUMPTIONS_DEFAULTS)
@@ -109,49 +111,50 @@ export function SprOptimizer() {
 
   return (
     <div className="space-y-4">
-      <Panel title="SPR Optimizer" icon={<Droplet className="h-4 w-4 text-cyan-400" />}>
+      <Panel title="SPR Optimizer" tone="accent">
         <div className="space-y-4 p-4">
           {/* Controls */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
-              <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-slate-400">
+              <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-muted">
                 <InfoTooltip term="Chokepoint" label="Blocked Chokepoint" />
               </label>
               <select
                 value={blocked}
                 onChange={(e) => { setBlocked(e.target.value); setPhase("idle") }}
-                className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 outline-none focus:border-cyan-500"
+                className="w-full rounded-md border border-border bg-panel-2 px-3 py-2 text-sm text-fg outline-none focus:border-accent"
               >
                 {chokepoints.map((c) => <option key={c}>{c}</option>)}
               </select>
             </div>
             <div>
-              <div className="mb-1.5 flex items-center justify-between text-[11px] font-medium uppercase tracking-wider text-slate-400">
+              <div className="mb-1.5 flex items-center justify-between text-[11px] font-medium uppercase tracking-wider text-muted">
                 <span>Rerouted Shipment Lead Time</span>
-                <span className="font-mono text-cyan-400">{leadTime} days</span>
+                <span className="font-mono text-accent">{leadTime} days</span>
               </div>
               <input
                 type="range"
                 min={5} max={60} value={leadTime}
                 onChange={(e) => { setLeadTime(Number(e.target.value)); setPhase("idle") }}
-                className="mt-2.5 h-1.5 w-full cursor-pointer appearance-none rounded-full bg-slate-700 accent-cyan-500"
+                style={{ background: `linear-gradient(to right, var(--t-accent) 0%, var(--t-accent) ${((leadTime - 5) / 55) * 100}%, var(--t-track) ${((leadTime - 5) / 55) * 100}%, var(--t-track) 100%)` }}
+                className="slider-slim mt-2.5 w-full cursor-pointer"
               />
             </div>
           </div>
 
           {/* Scenario A assumptions */}
-          <div className="rounded-md border border-slate-700/50 bg-slate-900/50 p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <h4 className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
+          <div className="rounded-[10px] border border-border bg-panel-2 p-[15px]">
+            <div className="mb-3.5 flex items-center justify-between">
+              <h4 className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">
                 {compareMode ? "Scenario A — Conservative Levers" : "Model Assumptions"}
               </h4>
               <button
                 type="button"
                 onClick={() => setCompareMode(!compareMode)}
-                className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider transition-colors ${
+                className={`flex items-center gap-1.5 rounded-[7px] px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${
                   compareMode
-                    ? "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30"
-                    : "border border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-300"
+                    ? "border border-accent-border bg-accent-soft text-accent"
+                    : "border border-border text-muted hover:border-muted hover:text-fg"
                 }`}
               >
                 <GitCompare className="h-3 w-3" />
@@ -167,8 +170,8 @@ export function SprOptimizer() {
 
           {/* Scenario B assumptions (compare mode only) */}
           {compareMode && (
-            <div className="rounded-md border border-amber-500/30 bg-amber-900/10 p-4">
-              <h4 className="mb-3 text-[11px] font-medium uppercase tracking-wider text-amber-400">
+            <div className="rounded-md border border-warn/30 bg-warn-soft p-4">
+              <h4 className="mb-3 text-[11px] font-medium uppercase tracking-wider text-warn">
                 Scenario B — Aggressive Levers
               </h4>
               <SprAssumptionsForm
@@ -183,7 +186,7 @@ export function SprOptimizer() {
             type="button"
             onClick={runSpr}
             disabled={phase === "loading"}
-            className="flex w-full items-center justify-center gap-2 rounded-md bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 transition-colors hover:bg-cyan-400 disabled:opacity-60"
+            className="flex w-full items-center justify-center gap-2 rounded-md bg-accent px-4 py-2.5 text-sm font-semibold text-bg transition-colors hover:opacity-90 disabled:opacity-60"
           >
             {phase === "loading" ? (
               <><Loader className="h-4 w-4 animate-spin" /> Running Simulation...</>
@@ -191,7 +194,7 @@ export function SprOptimizer() {
           </button>
 
           {phase === "error" && (
-            <div className="rounded border border-rose-500/40 bg-rose-500/10 p-3 text-sm text-rose-300">{error}</div>
+            <div className="rounded border border-crit/40 bg-crit-soft p-3 text-sm text-crit">{error}</div>
           )}
 
           {result && (
@@ -201,51 +204,51 @@ export function SprOptimizer() {
                 <StatChip
                   label="Daily Shortfall"
                   value={`${result.daily_shortfall_mbpd.toFixed(2)} mbpd`}
-                  accent="text-orange-400"
+                  accent="text-orange"
                 />
                 <StatChip
                   label="SPR Survival Days"
                   value={`${result.survival_days.toFixed(1)} days`}
-                  accent="text-cyan-400"
+                  accent="text-accent"
                 />
                 <StatChip
                   label="Supply Gap"
                   value={`${result.supply_gap_days.toFixed(1)} days`}
-                  accent={result.supply_gap_days > 0 ? "text-rose-500" : "text-emerald-400"}
+                  accent={result.supply_gap_days > 0 ? "text-crit" : "text-safe"}
                 />
               </div>
 
               {/* Recommendation badge */}
               <div className={`rounded-md border p-3 text-sm ${
-                statusColor === "red"    ? "border-rose-500/40 bg-rose-500/10 text-rose-300" :
-                statusColor === "orange" ? "border-orange-500/40 bg-orange-500/10 text-orange-300" :
-                                           "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                statusColor === "red"    ? "border-crit/40 bg-crit-soft text-crit" :
+                statusColor === "orange" ? "border-orange/40 bg-orange-soft text-orange" :
+                                           "border-safe/40 bg-safe-soft text-safe"
               }`}>
                 {result.recommendation}
               </div>
 
               {/* Compare KPIs for Scenario B */}
               {compareMode && resultB && (
-                <div className="rounded-md border border-amber-500/30 bg-amber-900/10 p-3">
-                  <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-amber-400">
+                <div className="rounded-md border border-warn/30 bg-warn-soft p-3">
+                  <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-warn">
                     Scenario B Outcomes
                   </div>
                   <div className="grid grid-cols-3 gap-3">
-                    <StatChip label="Shortfall" value={`${resultB.daily_shortfall_mbpd.toFixed(2)} mbpd`} accent="text-orange-400" />
-                    <StatChip label="Survival" value={`${resultB.survival_days.toFixed(1)} days`} accent="text-amber-400" />
-                    <StatChip label="Supply Gap" value={`${resultB.supply_gap_days.toFixed(1)} days`} accent={resultB.supply_gap_days > 0 ? "text-rose-500" : "text-emerald-400"} />
+                    <StatChip label="Shortfall" value={`${resultB.daily_shortfall_mbpd.toFixed(2)} mbpd`} accent="text-orange" />
+                    <StatChip label="Survival" value={`${resultB.survival_days.toFixed(1)} days`} accent="text-warn" />
+                    <StatChip label="Supply Gap" value={`${resultB.supply_gap_days.toFixed(1)} days`} accent={resultB.supply_gap_days > 0 ? "text-crit" : "text-safe"} />
                   </div>
                 </div>
               )}
 
               {/* Burndown chart */}
               {burndown.length > 0 && (
-                <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-3">
-                  <p className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-200">
-                    <Gauge className="h-4 w-4 text-cyan-400" />
+                <div className="rounded-lg border border-border bg-panel-2 p-3">
+                  <p className="mb-2 flex items-center gap-2 text-sm font-medium text-fg">
+                    <Gauge className="h-4 w-4 text-accent" />
                     SPR Burn-Down Trajectory (% of capacity)
                     {compareMode && resultB && (
-                      <span className="ml-2 text-[10px] font-normal text-slate-500">
+                      <span className="ml-2 text-[10px] font-normal text-muted">
                         · Cyan = Scenario A · Amber = Scenario B
                       </span>
                     )}
@@ -253,31 +256,31 @@ export function SprOptimizer() {
                   <div className="h-72">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={mergedBurndown} margin={{ top: 24, right: 16, left: -12, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                        <CartesianGrid strokeDasharray="3 3" stroke={c.grid} />
                         <XAxis
                           dataKey="day"
-                          stroke="#64748b"
+                          stroke={c.axis}
                           fontSize={11}
                           tickLine={false}
                           tickFormatter={(d) => `D${d}`}
                         />
-                        <YAxis stroke="#64748b" fontSize={11} tickLine={false} domain={[0, 100]} />
+                        <YAxis stroke={c.axis} fontSize={11} tickLine={false} domain={[0, 100]} />
                         <Tooltip content={chartTooltip} />
                         {compareMode && resultB && <Legend />}
                         <ReferenceLine
                           x={Math.round(leadTime)}
-                          stroke="#f43f5e"
+                          stroke={c.crit}
                           strokeDasharray="4 4"
-                          label={{ value: "Ships Arrive", fill: "#f43f5e", fontSize: 11, position: "insideTopLeft", offset: 10 }}
+                          label={{ value: "Ships Arrive", fill: c.crit, fontSize: 11, position: "insideTopLeft", offset: 10 }}
                         />
-                        <Line type="monotone" dataKey="baseline" name="Baseline (No Mgmt)" stroke="#f43f5e" strokeWidth={2} dot={false} isAnimationActive={false} />
-                        <Line type="monotone" dataKey="managed"  name={compareMode ? "Scenario A" : "With Demand Mgmt"} stroke="#34d399" strokeWidth={2} dot={false} isAnimationActive={false} />
+                        <Line type="monotone" dataKey="baseline" name="Baseline (No Mgmt)" stroke={c.crit} strokeWidth={2} dot={false} isAnimationActive={false} />
+                        <Line type="monotone" dataKey="managed"  name={compareMode ? "Scenario A" : "With Demand Mgmt"} stroke={c.safe} strokeWidth={2} dot={false} isAnimationActive={false} />
                         {compareMode && resultB && (
                           <Line
                             type="monotone"
                             dataKey="managedB"
                             name="Scenario B"
-                            stroke="#fbbf24"
+                            stroke={c.warn}
                             strokeWidth={2}
                             strokeDasharray="5 3"
                             dot={false}
@@ -300,7 +303,7 @@ export function SprOptimizer() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-slate-800 text-left text-[11px] uppercase tracking-wider text-slate-500">
+                <tr className="border-b border-border text-left text-[11px] uppercase tracking-wider text-muted">
                   <th className="px-4 py-2.5 font-medium">Action</th>
                   <th className="px-4 py-2.5 font-medium">Impact</th>
                   <th className="px-4 py-2.5 font-medium">Status</th>
@@ -311,16 +314,16 @@ export function SprOptimizer() {
                   ? actions.map((a) => ({ action: a.action, impact: `${a.saves_mbpd.toFixed(2)} mbpd`, status: "Ready" }))
                   : demandPlaybook
                 ).map((p) => (
-                  <tr key={p.action} className="border-b border-slate-800/60 last:border-0">
-                    <td className="px-4 py-2.5 text-slate-200">{p.action}</td>
-                    <td className="px-4 py-2.5 font-mono text-emerald-400">{p.impact}</td>
+                  <tr key={p.action} className="border-b border-hair last:border-0">
+                    <td className="px-4 py-2.5 text-fg">{p.action}</td>
+                    <td className="px-4 py-2.5 font-mono text-safe">{p.impact}</td>
                     <td className="px-4 py-2.5">
                       <span className={`rounded border px-2 py-0.5 text-[10px] font-bold tracking-wider ${
                         p.status === "Ready"
-                          ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-400"
+                          ? "border-safe/40 bg-safe-soft text-safe"
                           : p.status === "Armed"
-                          ? "border-orange-500/40 bg-orange-500/15 text-orange-400"
-                          : "border-slate-600/50 bg-slate-500/15 text-slate-400"
+                          ? "border-orange/40 bg-orange-soft text-orange"
+                          : "border-border bg-hair text-muted"
                       }`}>
                         {p.status.toUpperCase()}
                       </span>
@@ -337,12 +340,12 @@ export function SprOptimizer() {
             {INDIA_SPR_SITES.map((s) => (
               <div key={s.name}>
                 <div className="mb-1 flex items-center justify-between text-xs">
-                  <span className="text-slate-300">{s.name}</span>
-                  <span className="font-mono text-slate-400">{s.pct}%</span>
+                  <span className="text-fg">{s.name}</span>
+                  <span className="font-mono text-muted">{s.pct}%</span>
                 </div>
-                <div className="h-2 overflow-hidden rounded-full bg-slate-800">
+                <div className="h-2 overflow-hidden rounded-full bg-track">
                   <div
-                    className={`h-full rounded-full ${s.pct > 70 ? "bg-emerald-400" : s.pct > 55 ? "bg-cyan-400" : "bg-orange-400"}`}
+                    className={`h-full rounded-full ${s.pct > 70 ? "bg-safe" : s.pct > 55 ? "bg-accent" : "bg-orange"}`}
                     style={{ width: `${s.pct}%` }}
                   />
                 </div>

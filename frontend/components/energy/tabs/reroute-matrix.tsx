@@ -1,11 +1,16 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Crosshair, Anchor, Loader, Filter, Shield, Activity } from "lucide-react"
+import { Anchor, Loader, Filter, Activity } from "lucide-react"
 import { InfoTooltip } from "@/components/ui/info-tooltip"
 import { Panel, StatChip } from "../ui"
-import { fetchReroute, fetchChokepoints, fetchRefineries, fetchGrades, fetchProducerMatrix, type ProcurementRow, type Diagnostic, type ChokepointRisk } from "@/lib/api"
-import { RerouteParamsForm, type RerouteParamsValue } from "../shared/reroute-params-form"
+import { fetchReroute, fetchChokepoints, fetchRefineries, fetchGrades, type ProcurementRow, type Diagnostic } from "@/lib/api"
+import {
+  CrudeGradeField,
+  OptimiseForField,
+  ExcludedCountriesField,
+  type RerouteParamsValue,
+} from "../shared/reroute-params-form"
 
 type Phase = "idle" | "loading" | "done" | "error"
 
@@ -25,18 +30,16 @@ export function RerouteMatrix() {
   const [maxLeadTime, setMaxLeadTime] = useState<number>(90)
   const [phase, setPhase]             = useState<Phase>("idle")
   const [pm, setPm]                   = useState<ProcurementRow[]>([])
-  const [producers, setProducers]     = useState<ChokepointRisk[]>([])
   const [diagnostic, setDiagnostic]   = useState<Diagnostic | null>(null)
   const [meta, setMeta]               = useState({ resilience: 0, brent: 0, count: 0 })
   const [error, setError]             = useState("")
 
   useEffect(() => {
-    Promise.all([fetchChokepoints(), fetchRefineries(), fetchGrades(), fetchProducerMatrix()])
-      .then(([cps, refs, grs, prods]) => {
+    Promise.all([fetchChokepoints(), fetchRefineries(), fetchGrades()])
+      .then(([cps, refs, grs]) => {
         if (cps.length) { setChokepoints(cps); setBlocked(cps[0]) }
         if (refs.length) { setRefineries(refs); setDest(refs[0]) }
         if (grs.length) { setGrades(["Any", ...grs]) }
-        if (prods) { setProducers(prods) }
       })
       .catch(() => {
         setRefineries(["Jamnagar (India)"])
@@ -75,17 +78,17 @@ export function RerouteMatrix() {
   const filteredPm = pm.filter((r) => r.lead_time_days <= maxLeadTime)
 
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
-      <div className="flex flex-col gap-4 lg:col-span-3">
-        <Panel title="Reroute Matrix" icon={<Crosshair className="h-4 w-4 text-cyan-400" />}>
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-4">
+        <Panel title="Reroute Matrix" tone="accent">
           <div className="space-y-4 p-4">
-        {/* Row 1: Chokepoint + Destination */}
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        {/* Row 1: what is blocked, where it must land, which grade. */}
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <Field label={<InfoTooltip term="Chokepoint" label="Blocked Chokepoint" />}>
             <select
               value={blocked}
               onChange={(e) => { setBlocked(e.target.value); setPhase("idle") }}
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 outline-none focus:border-cyan-500"
+              className="w-full rounded-md border border-border bg-panel-2 px-3 py-2 text-sm text-fg outline-none focus:border-accent"
             >
               {chokepoints.map((c) => <option key={c}>{c}</option>)}
             </select>
@@ -94,42 +97,49 @@ export function RerouteMatrix() {
             <select
               value={dest}
               onChange={(e) => { setDest(e.target.value); setPhase("idle") }}
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 outline-none focus:border-cyan-500"
+              className="w-full rounded-md border border-border bg-panel-2 px-3 py-2 text-sm text-fg outline-none focus:border-accent"
             >
               {refineries.map((r) => <option key={r}>{r}</option>)}
             </select>
           </Field>
+          <CrudeGradeField
+            value={params}
+            grades={grades}
+            onChange={(next) => { setParams(next); setPhase("idle") }}
+          />
         </div>
 
-        {/* Row 2: Shared RerouteParamsForm (Crude Grade + Optimise For) */}
-        <RerouteParamsForm
-          value={params}
-          grades={grades}
-          onChange={(next) => { setParams(next); setPhase("idle") }}
-        />
+        {/* Row 2: constraints and the action. Exclusions take the flexible
+            column since its chips grow; the rest size to their content. */}
+        <div className="grid grid-cols-1 items-end gap-3 md:grid-cols-[auto_minmax(200px,1fr)_190px_auto]">
+          <OptimiseForField
+            value={params}
+            onChange={(next) => { setParams(next); setPhase("idle") }}
+          />
+          <ExcludedCountriesField
+            value={params}
+            onChange={(next) => { setParams(next); setPhase("idle") }}
+          />
 
-        {/* Row 3: Filters row */}
-        <div className="flex flex-wrap items-end gap-4">
-          {/* Max lead-time filter */}
-          <div className="flex-1 min-w-[180px]">
-            <div className="mb-1.5 flex items-center justify-between text-[11px] font-medium uppercase tracking-wider text-slate-400">
+          <div>
+            <div className="mb-1.5 flex items-center justify-between text-[11px] font-medium uppercase tracking-wider text-muted">
               <span className="flex items-center gap-1"><Filter className="h-3 w-3" /> Max Lead Time</span>
-              <span className="font-mono text-cyan-400">{maxLeadTime} days</span>
+              <span className="font-mono text-accent">{maxLeadTime}d</span>
             </div>
             <input
               type="range" min={5} max={90} step={1} value={maxLeadTime}
               onChange={(e) => setMaxLeadTime(Number(e.target.value))}
-              className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-slate-700 accent-cyan-500"
+              style={{ background: `linear-gradient(to right, var(--t-accent) 0%, var(--t-accent) ${((maxLeadTime - 5) / 85) * 100}%, var(--t-track) ${((maxLeadTime - 5) / 85) * 100}%, var(--t-track) 100%)` }}
+              className="slider-slim mb-2.5 w-full cursor-pointer"
             />
           </div>
 
-          {/* Generate button */}
           <button
             id="reroute-generate-btn"
             type="button"
             onClick={generate}
             disabled={phase === "loading"}
-            className="flex items-center justify-center gap-2 rounded-md bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 transition-colors hover:bg-cyan-400 disabled:opacity-60"
+            className="flex h-[38px] items-center justify-center gap-2 rounded-md bg-accent px-5 text-sm font-semibold text-bg transition-colors hover:opacity-90 disabled:opacity-60"
           >
             {phase === "loading" ? (
               <><Loader className="h-4 w-4 animate-spin" /> Generating...</>
@@ -138,17 +148,17 @@ export function RerouteMatrix() {
         </div>
 
         {phase === "error" && (
-          <div className="rounded border border-rose-500/40 bg-rose-500/10 p-3 text-sm text-rose-300">
+          <div className="rounded border border-crit/40 bg-crit-soft p-3 text-sm text-crit">
             {error}
           </div>
         )}
 
         {phase === "done" && diagnostic && (
-          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-5 text-sm">
-            <div className="mb-2 flex items-center gap-2 font-semibold text-amber-400">
+          <div className="rounded-lg border border-warn/30 bg-warn-soft p-5 text-sm">
+            <div className="mb-2 flex items-center gap-2 font-semibold text-warn">
               <Activity className="h-4 w-4" /> No viable alternatives found
             </div>
-            <div className="mb-4 text-slate-300">
+            <div className="mb-4 text-fg">
               {diagnostic.message}
             </div>
             <div className="flex flex-wrap gap-2">
@@ -162,7 +172,7 @@ export function RerouteMatrix() {
                     // Auto-trigger using the next state
                     setTimeout(() => document.getElementById("reroute-generate-btn")?.click(), 100)
                   }}
-                  className="rounded bg-amber-500/20 px-3 py-1.5 font-medium text-amber-300 hover:bg-amber-500/30 transition-colors"
+                  className="rounded bg-warn-soft px-3 py-1.5 font-medium text-warn hover:bg-warn-soft transition-colors"
                 >
                   Remove conflicts ({diagnostic.grade_suppliers.join(", ")})
                 </button>
@@ -175,7 +185,7 @@ export function RerouteMatrix() {
                     setParams(newParams)
                     setTimeout(() => document.getElementById("reroute-generate-btn")?.click(), 100)
                   }}
-                  className="rounded bg-slate-700/50 px-3 py-1.5 font-medium text-slate-200 hover:bg-slate-700 transition-colors"
+                  className="rounded bg-track px-3 py-1.5 font-medium text-fg hover:bg-track transition-colors"
                 >
                   Allow compatible substitute grades
                 </button>
@@ -187,21 +197,21 @@ export function RerouteMatrix() {
         {phase === "done" && pm.length > 0 && !diagnostic && (
           <>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <StatChip label={<InfoTooltip term="Resilience Index" />} value={meta.resilience.toFixed(2)} accent="text-emerald-400" />
-              <StatChip label="Brent Spot"     value={`$${meta.brent.toFixed(2)}`} accent="text-cyan-400" />
-              <StatChip label="Viable Sources" value={String(filteredPm.length)} accent="text-white" />
+              <StatChip label={<InfoTooltip term="Resilience Index" />} value={meta.resilience.toFixed(2)} accent="text-safe" />
+              <StatChip label="Brent Spot"     value={`$${meta.brent.toFixed(2)}`} accent="text-accent" />
+              <StatChip label="Viable Sources" value={String(filteredPm.length)} accent="text-head" />
             </div>
 
             {maxLeadTime < 90 && filteredPm.length < pm.length && (
-              <div className="text-[11px] text-slate-500">
+              <div className="text-[11px] text-muted">
                 Showing {filteredPm.length} of {pm.length} sources — {pm.length - filteredPm.length} filtered by max lead time ({maxLeadTime} days)
               </div>
             )}
 
-            <div className="overflow-x-auto rounded-lg border border-slate-800">
+            <div className="overflow-x-auto rounded-lg border border-border">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-slate-800 bg-slate-950/60 text-left text-[11px] uppercase tracking-wider text-slate-500">
+                  <tr className="border-b border-border bg-panel-2 text-left text-[11px] uppercase tracking-wider text-muted">
                     <th className="px-4 py-2.5 font-medium">Export Terminal</th>
                     <th className="px-4 py-2.5 font-medium">Country</th>
                     <th className="px-4 py-2.5 font-medium">Crude Grade</th>
@@ -214,48 +224,60 @@ export function RerouteMatrix() {
                   {filteredPm.map((r, i) => (
                     <tr
                       key={`${r.export_port}-${i}`}
-                      className={`border-b border-slate-800/60 last:border-0 ${i === 0 ? "bg-emerald-500/10" : ""}`}
+                      className={`border-b border-hair last:border-0 ${i === 0 ? "bg-row-hi" : ""}`}
                     >
-                      <td className="px-4 py-2.5 font-medium text-slate-200">
+                      <td className="px-4 py-2.5 font-medium text-fg">
                         <span className="flex items-center gap-2">
-                          {i === 0 && <Anchor className="h-3.5 w-3.5 text-emerald-400" />}
+                          {i === 0 && <Anchor className="h-3.5 w-3.5 text-safe" />}
                           {r.export_port}
                           {i === 0 && (
-                            <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-emerald-400">
+                            <span className="rounded bg-safe-soft px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-safe">
                               TOP PICK
                             </span>
                           )}
                         </span>
                       </td>
-                      <td className="px-4 py-2.5 text-slate-400">{r.country}</td>
-                      <td className="px-4 py-2.5 text-slate-400">
+                      <td className="px-4 py-2.5 text-muted">{r.country}</td>
+                      <td className="px-4 py-2.5 text-muted">
                         <div className="flex items-center gap-2">
                           {r.crude_grade}
-                          {r.match_type === "exact" ? (
-                            <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-400">
+                          {r.match_type === "exact" && (
+                            <span className="rounded bg-safe-soft px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-safe">
                               Exact Match
                             </span>
-                          ) : (
+                          )}
+                          {r.match_type === "substitute" && (
                             <div className="group relative flex items-center">
-                              <span className="cursor-help rounded bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-400">
+                              <span className="cursor-help rounded bg-warn-soft px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-warn">
                                 Substitute
                               </span>
-                              <div className="pointer-events-none absolute bottom-full left-1/2 mb-2 w-max -translate-x-1/2 rounded bg-slate-800 px-2 py-1 text-xs text-slate-200 opacity-0 transition-opacity group-hover:opacity-100">
+                              <div className="z-10 pointer-events-none absolute bottom-full left-1/2 mb-2 w-max max-w-xs whitespace-normal text-center -translate-x-1/2 rounded bg-track px-2 py-1 text-xs text-fg opacity-0 transition-opacity group-hover:opacity-100">
                                 {r.match_reason}
-                                <div className="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-slate-800" />
+                                <div className="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-border" />
+                              </div>
+                            </div>
+                          )}
+                          {r.match_type === "blend" && (
+                            <div className="group relative flex items-center">
+                              <span className="cursor-help rounded bg-accent-soft px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-accent">
+                                Modeled Blend
+                              </span>
+                              <div className="z-10 pointer-events-none absolute bottom-full left-1/2 mb-2 w-max max-w-xs whitespace-normal text-center -translate-x-1/2 rounded bg-track px-2 py-1 text-xs text-fg opacity-0 transition-opacity group-hover:opacity-100">
+                                {r.match_reason}
+                                <div className="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-border" />
                               </div>
                             </div>
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-2.5 font-mono text-slate-200">${r.landed_cost_usd.toFixed(2)}</td>
-                      <td className="px-4 py-2.5 font-mono text-orange-400">+${r.freight_premium.toFixed(2)}</td>
-                      <td className="px-4 py-2.5 font-mono text-cyan-400">{r.lead_time_days.toFixed(1)} days</td>
+                      <td className="px-4 py-2.5 font-mono text-fg">${r.landed_cost_usd.toFixed(2)}</td>
+                      <td className="px-4 py-2.5 font-mono text-orange">+${r.freight_premium.toFixed(2)}</td>
+                      <td className="px-4 py-2.5 font-mono text-accent">{r.lead_time_days.toFixed(1)} days</td>
                     </tr>
                   ))}
                   {filteredPm.length === 0 && phase === "done" && (
                     <tr>
-                      <td colSpan={6} className="px-4 py-6 text-center text-sm text-slate-500">
+                      <td colSpan={6} className="px-4 py-6 text-center text-sm text-muted">
                         No routes within {maxLeadTime}-day lead time — try increasing the filter.
                       </td>
                     </tr>
@@ -268,40 +290,6 @@ export function RerouteMatrix() {
         </div>
       </Panel>
       </div>
-
-      <div className="flex flex-col gap-4 lg:col-span-1">
-        <Panel title="Producer Risk Matrix" icon={<Shield className="h-4 w-4 text-rose-400" />}>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-800 text-left text-[11px] uppercase tracking-wider text-slate-500">
-                  <th className="px-4 py-2.5 font-medium">Producer</th>
-                  <th className="px-4 py-2.5 font-medium">Risk Score</th>
-                </tr>
-              </thead>
-              <tbody>
-                {producers.map((p) => (
-                  <tr key={p.name} className="border-b border-slate-800/60 last:border-0">
-                    <td className="px-4 py-2.5 font-medium text-slate-200">{p.name}</td>
-                    <td className="px-4 py-2.5">
-                      <div className="flex items-center gap-2">
-                        <div className="h-1.5 w-12 overflow-hidden rounded-full bg-slate-800">
-                          <div
-                            className={`h-full rounded-full ${p.risk_score > 0.6 ? "bg-rose-500" : p.risk_score > 0.4 ? "bg-orange-400" : "bg-emerald-400"
-                              }`}
-                            style={{ width: `${p.risk_score * 100}%` }}
-                          />
-                        </div>
-                        <span className="font-mono text-xs text-slate-300">{p.risk_score.toFixed(2)}</span>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Panel>
-      </div>
     </div>
   )
 }
@@ -309,7 +297,7 @@ export function RerouteMatrix() {
 function Field({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
   return (
     <div>
-      <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-slate-400">
+      <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-wider text-muted">
         {label}
       </label>
       {children}
