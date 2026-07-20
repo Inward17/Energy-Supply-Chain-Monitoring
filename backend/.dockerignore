@@ -1,0 +1,32 @@
+# Secrets — these must come from the platform's environment/secret store, never
+# be baked into an image layer. .env holds live Gemini/AIS/news provider keys.
+.env
+.env.*
+!.env.example
+
+# Local virtualenv: gigabytes of Windows-specific binaries that would break a
+# linux/amd64 image even if they fit.
+venv/
+.venv/
+
+# Build/test artefacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# Runtime state that must not persist into an image
+cron_worker.log
+*.log
+cron_worker.lock
+
+# Local probe scripts that hit live APIs on import (see pytest.ini)
+test_gdelt_fetch.py
+verify_schema.py
+
+.git/
+.gitignore
+.DS_Store

@@ -37,13 +37,21 @@ load_dotenv(override=True)
 # Logging
 # ---------------------------------------------------------------------------
 
+# stdout is the only handler a container platform needs — it captures and
+# rotates for you. The local file is a convenience for bare-metal runs and is
+# skipped when the filesystem is read-only or the log is unwanted, so a
+# container never dies over a logging path it cannot write.
+_LOG_HANDLERS: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
+if os.getenv("LOG_TO_FILE", "1") != "0":
+    try:
+        _LOG_HANDLERS.append(logging.FileHandler("cron_worker.log", encoding="utf-8"))
+    except OSError:
+        pass
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  %(levelname)-8s  %(name)s — %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler("cron_worker.log", encoding="utf-8"),
-    ],
+    handlers=_LOG_HANDLERS,
 )
 logger = logging.getLogger("cron_worker")
 
