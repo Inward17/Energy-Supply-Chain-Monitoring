@@ -44,6 +44,13 @@ def get_engine() -> Engine:
             f":{os.getenv('DB_PORT', '5432')}"
             f"/{os.getenv('DB_NAME', 'energy_resilience')}"
         )
+        # Managed providers (Neon, Supabase) require TLS. libpq's default
+        # sslmode=prefer happens to negotiate it, but silently falls back to
+        # plaintext if the server ever stops demanding it — so state it
+        # explicitly. Left unset for local Postgres, which has no TLS.
+        sslmode = os.getenv("DB_SSLMODE", "").strip()
+        if sslmode:
+            dsn = f"{dsn}?sslmode={sslmode}"
         _engine = create_engine(
             dsn,
             poolclass=QueuePool,
