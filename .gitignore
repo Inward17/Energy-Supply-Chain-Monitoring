@@ -21,8 +21,11 @@ venv/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+# Anchored to the repo root: unanchored "lib/" also matched frontend/lib/,
+# silently keeping the frontend's API client and utils out of the repo. A
+# virtualenv's lib/ is already covered by the venv/ and .venv/ rules below.
+/lib/
+/lib64/
 parts/
 sdist/
 var/
