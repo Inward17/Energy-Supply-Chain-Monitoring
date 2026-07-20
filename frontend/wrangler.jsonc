@@ -1,0 +1,20 @@
+{
+  // Static-assets-only Worker. This app is a Next.js *static export*
+  // (`output: 'export'` in next.config.mjs) — `next build` emits a plain `out/`
+  // directory and there is no server to run, so no `main` entrypoint is set.
+  //
+  // This file must exist. Without it, `wrangler deploy` runs its auto-config,
+  // detects "Next.js", assumes a server-rendered app and migrates the project
+  // to the OpenNext adapter — which then fails looking for
+  // `.next/standalone/server/pages-manifest.json`, a path a static export
+  // never produces.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "energy-supply-chain",
+  "compatibility_date": "2026-07-20",
+  "assets": {
+    "directory": "./out",
+    // `next build` emits out/404.html; serve it for unmatched paths rather than
+    // the SPA fallback, since routing here is a single prerendered page.
+    "not_found_handling": "404-page"
+  }
+}
