@@ -209,6 +209,15 @@ def step_sdi_snapshot() -> None:
     logger.info("SDI     snapshot persisted: %.1f", snapshot["sdi_score"])
 
 
+def step_retention() -> None:
+    """Trim telemetry past the analysis window so storage stays bounded."""
+    from src.database.postgres_db import purge_old_telemetry
+
+    days = int(os.getenv("TELEMETRY_RETENTION_DAYS", "14"))
+    removed = purge_old_telemetry(days)
+    logger.info("RETENTION✓  %d vessel row(s) older than %dd removed", removed, days)
+
+
 def step_portwatch() -> None:
     """Fetch daily port traffic from IMF PortWatch."""
     from src.ingestion.portwatch_trawler import trawl_portwatch
@@ -366,6 +375,10 @@ def _run_worker(args: argparse.Namespace) -> None:
 
     # Port traffic is slow-moving — once every 12 hours is plenty
     schedule.every(12).hours.do(_run_step_safely, "PortWatch", step_portwatch)
+
+    # Storage housekeeping — cheap, and the only thing stopping vessel_telemetry
+    # growing past a managed free tier's cap.
+    schedule.every(24).hours.do(_run_step_safely, "Retention", step_retention)
 
     # Backtest jobs are user-triggered — must start within ~30 s of being queued
     schedule.every(30).seconds.do(_run_step_safely, "Backtests", step_backtests)

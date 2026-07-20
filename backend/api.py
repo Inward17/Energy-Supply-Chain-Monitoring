@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import pandas as pd
 from typing import Any
 from datetime import datetime, timedelta, date, timezone
@@ -81,14 +82,29 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Allow the Next.js dev server (port 3000) and production builds to call this API
+# The dashboard calls this API straight from the browser, so the deployed
+# frontend's origin has to be allowed explicitly. Set CORS_ORIGINS to a
+# comma-separated list (e.g. "https://foo.pages.dev,https://dash.example.com").
+# Defaults cover local development.
+#
+# Deliberately not "*": these endpoints are unauthenticated and spend metered
+# third-party quota (Gemini, news providers), so a wildcard would let any site
+# drive that spend.
+_DEFAULT_CORS_ORIGINS = "http://localhost:3000,http://localhost:3001,http://localhost:5173"
+CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("CORS_ORIGINS", _DEFAULT_CORS_ORIGINS).split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://localhost:5173"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+logger.info("CORS allowed origins: %s", CORS_ORIGINS)
 
 
 # ── Startup ───────────────────────────────────────────────────────────────────

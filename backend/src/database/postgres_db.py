@@ -264,7 +264,6 @@ def upsert_news(records: list[dict[str, Any]]) -> int:
     """
     if not records:
         return 0
-    inserted = 0
     stmt = text(
         """
         INSERT INTO news_cache (url, title, source, fetched_at, processed, article_category)
@@ -272,27 +271,39 @@ def upsert_news(records: list[dict[str, Any]]) -> int:
         ON CONFLICT (url) DO NOTHING
         """
     )
+    now = datetime.now(timezone.utc)
+    # Deduplicate on the conflict key before batching. Providers regularly
+    # return the same URL twice in one response, and a single multi-row INSERT
+    # cannot rely on row-by-row conflict resolution the way the old per-row
+    # loop did. First occurrence wins, matching DO NOTHING.
+    params: dict[str, dict[str, Any]] = {}
+    for rec in records:
+        url = rec.get("url")
+        if not url or url in params:
+            continue
+        params[url] = {
+            "url": url,
+            "title": rec.get("title", ""),
+            "source": rec.get("source", ""),
+            # Prefer the article's own publication time. Risk decay runs from
+            # this timestamp, so stamping a provider's delayed article
+            # (GNews ~12h, NewsAPI ~24h) as "now" would score day-old news as
+            # if it were breaking.
+            "fetched_at": rec.get("published_at") or now,
+            "article_category": rec.get("article_category", "general"),
+        }
+    if not params:
+        return 0
     try:
+        # One statement instead of one per row: over a managed database each
+        # round trip costs the network RTT, so a 600-row snapshot went from
+        # ~600 round trips to one.
         with get_conn() as conn:
-            for rec in records:
-                result = conn.execute(
-                    stmt,
-                    {
-                        "url": rec.get("url"),
-                        "title": rec.get("title", ""),
-                        "source": rec.get("source", ""),
-                        # Prefer the article's own publication time. Risk decay
-                        # runs from this timestamp, so stamping a provider's
-                        # delayed article (GNews ~12h, NewsAPI ~24h) as "now"
-                        # would score day-old news as if it were breaking.
-                        "fetched_at": rec.get("published_at") or datetime.now(timezone.utc),
-                        "article_category": rec.get("article_category", "general"),
-                    },
-                )
-                inserted += result.rowcount
+            result = conn.execute(stmt, list(params.values()))
+            return result.rowcount or 0
     except Exception as exc:
         logger.error("upsert_news failed: %s", exc)
-    return inserted
+        return 0
 
 
 def fetch_unprocessed_news(
@@ -378,28 +389,37 @@ def upsert_vessel(records: list[dict[str, Any]]) -> int:
         ON CONFLICT (mmsi, recorded_at) DO NOTHING
         """
     )
-    inserted = 0
+    now = datetime.now(timezone.utc)
+    # Dedupe on (mmsi, recorded_at) — a single AIS snapshot can report the same
+    # vessel twice within the same second. First occurrence wins, matching the
+    # DO NOTHING the per-row loop used to rely on.
+    params: dict[tuple[Any, Any], dict[str, Any]] = {}
+    for rec in records:
+        key = (rec.get("mmsi"), rec.get("recorded_at", now))
+        if key in params:
+            continue
+        params[key] = {
+            "mmsi":        rec.get("mmsi"),
+            "vessel_name": rec.get("vessel_name", ""),
+            "ship_type":   rec.get("ship_type"),
+            "lat":         rec.get("lat"),
+            "lon":         rec.get("lon"),
+            "speed":       rec.get("speed", 0),
+            "heading":     rec.get("heading", 0),
+            "region":      rec.get("region", "Unknown"),
+            "recorded_at": rec.get("recorded_at", now),
+        }
+    if not params:
+        return 0
     try:
+        # The hot path: an AIS snapshot is ~600 rows. As one statement this is
+        # a single round trip rather than ~600.
         with get_conn() as conn:
-            for rec in records:
-                result = conn.execute(
-                    stmt,
-                    {
-                        "mmsi":        rec.get("mmsi"),
-                        "vessel_name": rec.get("vessel_name", ""),
-                        "ship_type":   rec.get("ship_type"),
-                        "lat":         rec.get("lat"),
-                        "lon":         rec.get("lon"),
-                        "speed":       rec.get("speed", 0),
-                        "heading":     rec.get("heading", 0),
-                        "region":      rec.get("region", "Unknown"),
-                        "recorded_at": rec.get("recorded_at", datetime.now(timezone.utc)),
-                    },
-                )
-                inserted += result.rowcount
+            result = conn.execute(stmt, list(params.values()))
+            return result.rowcount or 0
     except Exception as exc:
         logger.error("upsert_vessel failed: %s", exc)
-    return inserted
+        return 0
 
 
 def fetch_vessels(region: str | None = None, limit: int = 500) -> list[dict[str, Any]]:
@@ -521,6 +541,30 @@ def fetch_region_tanker_buckets(
         return []
 
 
+def purge_old_telemetry(days: int = 14) -> int:
+    """Drop vessel rows older than the analysis window.
+
+    `vessel_telemetry` is the only table that grows without bound (~23k
+    rows/month), yet nothing reads past 7 days: the density baseline queries
+    `fetch_region_tanker_buckets(days=7)` and live positions use 24h. Keeping
+    14 days leaves margin while stopping the table growing forever — which
+    matters on a managed free tier with a storage cap.
+    """
+    try:
+        with get_conn() as conn:
+            result = conn.execute(
+                text(
+                    "DELETE FROM vessel_telemetry "
+                    "WHERE recorded_at < NOW() - make_interval(days => :days)"
+                ),
+                {"days": days},
+            )
+            return result.rowcount or 0
+    except Exception as exc:
+        logger.error("purge_old_telemetry failed: %s", exc)
+        return 0
+
+
 def upsert_vessel_types(records: list[dict[str, Any]]) -> None:
     """Insert or update ship types in the persistent registry."""
     if not records:
@@ -533,10 +577,14 @@ def upsert_vessel_types(records: list[dict[str, Any]]) -> None:
             ship_type = EXCLUDED.ship_type
         """
     )
+    # DO UPDATE cannot resolve two rows with the same mmsi inside one
+    # statement. Last occurrence wins, as the per-row loop did.
+    params: dict[Any, dict[str, Any]] = {rec.get("mmsi"): dict(rec) for rec in records}
+    if not params:
+        return
     try:
         with get_conn() as conn:
-            for rec in records:
-                conn.execute(stmt, rec)
+            conn.execute(stmt, list(params.values()))
     except Exception as exc:
         logger.error("upsert_vessel_types failed: %s", exc)
 
@@ -576,15 +624,21 @@ def upsert_price(records: list[dict[str, Any]]) -> int:
             volume      = EXCLUDED.volume
         """
     )
-    inserted = 0
+    # DO UPDATE cannot resolve two rows with the same conflict key inside one
+    # statement, so collapse duplicates here. Last occurrence wins, which is
+    # what the per-row loop produced.
+    params: dict[tuple[Any, Any], dict[str, Any]] = {}
+    for rec in records:
+        params[(rec.get("ticker"), rec.get("trade_date"))] = dict(rec)
+    if not params:
+        return 0
     try:
         with get_conn() as conn:
-            for rec in records:
-                result = conn.execute(stmt, rec)
-                inserted += result.rowcount
+            result = conn.execute(stmt, list(params.values()))
+            return result.rowcount or 0
     except Exception as exc:
         logger.error("upsert_price failed: %s", exc)
-    return inserted
+        return 0
 
 
 def fetch_latest_prices(
