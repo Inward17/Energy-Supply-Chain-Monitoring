@@ -220,6 +220,13 @@ def init_schema() -> None:
         "ALTER TABLE risk_events ADD COLUMN IF NOT EXISTS affected_producer_countries TEXT[]",
         "ALTER TABLE risk_events_backtest ADD COLUMN IF NOT EXISTS affected_producer_countries TEXT[]",
         "ALTER TABLE risk_events ADD COLUMN IF NOT EXISTS directly_affected_producer_countries TEXT[]",
+        # The chokepoint counterpart of the line above. Added late and missed
+        # here, so a database created from scratch lacked it while long-running
+        # ones (which got it by hand) worked — the failure only appeared on a
+        # first deployment to a fresh host. upsert_risk_event writes this column
+        # and fetch_risk_events selects it by name, so without it every risk
+        # event read and write raises and the dashboard shows no alerts at all.
+        "ALTER TABLE risk_events ADD COLUMN IF NOT EXISTS directly_affected_chokepoints TEXT[]",
         "ALTER TABLE risk_events ADD COLUMN IF NOT EXISTS source_fetched_at TIMESTAMPTZ",
         # Safely add severity reasoning to existing DBs
         "ALTER TABLE risk_events ADD COLUMN IF NOT EXISTS severity_reasoning TEXT",
