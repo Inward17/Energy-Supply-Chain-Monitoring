@@ -29,7 +29,6 @@ import logging
 from typing import Any
 
 from neo4j import GraphDatabase, Driver
-from neo4j.exceptions import ServiceUnavailable
 from dotenv import load_dotenv
 load_dotenv(override=True)
 logger = logging.getLogger(__name__)
@@ -51,9 +50,29 @@ def get_driver() -> Driver | None:
         try:
             _driver = GraphDatabase.driver(uri, auth=(user, pwd))
             _driver.verify_connectivity()
-            logger.info("Neo4j driver connected to %s", uri)
-        except ServiceUnavailable:
-            logger.warning("Neo4j unavailable at %s — graph features disabled.", uri)
+            logger.info("Neo4j driver connected to %s as %r", uri, user)
+        except Exception as exc:
+            # Deliberately broad. This used to catch ServiceUnavailable only,
+            # which meant a wrong username or password — AuthError, a different
+            # branch of the exception tree — skipped the reset below and left
+            # _driver holding a live object that fails every query. Callers
+            # each catch that and substitute hardcoded fallback routes, so a
+            # completely unreachable graph looked like a working dashboard
+            # serving invented numbers.
+            #
+            # The URI and user are logged because the two failure modes are
+            # indistinguishable otherwise: an unset NEO4J_URI silently points
+            # at localhost, and an unset NEO4J_USER defaults to "neo4j".
+            logger.error(
+                "Neo4j connection failed (%s) at %s as %r — graph features "
+                "disabled, callers will use fallback data: %s",
+                type(exc).__name__, uri, user, exc,
+            )
+            if _driver is not None:
+                try:
+                    _driver.close()
+                except Exception:
+                    pass
             _driver = None
     return _driver
 
