@@ -162,6 +162,10 @@ frontend/test-results/
 .claude/sessions/
 .claude/plans/
 
+# Local database dumps taken for migration. Real collected data, regenerated
+# on demand with pg_dump — not something to carry in the repo.
+seed/local_data.sql
+
 # Scratch files
 *.orig
 *.rej
