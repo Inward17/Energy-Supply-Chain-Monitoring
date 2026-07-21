@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import pandas as pd
 from typing import Any
 from datetime import datetime, timedelta, date, timezone
@@ -60,6 +61,7 @@ from src.database.postgres_db import (
     update_backtest_job,
     fetch_all_backtest_jobs
 )
+from backtest_dispatch import dispatch as dispatch_backtest
 from src.database.neo4j_graph import get_driver
 from src.utils.constants import (
     COUNTRY_ALIASES,
@@ -107,24 +109,101 @@ app.add_middleware(
 logger.info("CORS allowed origins: %s", CORS_ORIGINS)
 
 
+# ── Health ────────────────────────────────────────────────────────────────────
+
+@app.get("/healthz")
+def healthz() -> dict[str, str]:
+    """Liveness probe. Deliberately touches no database.
+
+    A host that idles a service out after a few minutes has to be kept awake
+    by an external pinger, which means this route is hit continuously forever.
+    Pointing that at anything which queries Postgres would hold a serverless
+    database open around the clock and drain a metered compute allowance
+    without a single user visiting. Answering from memory costs nothing.
+
+    Use /api/metrics/live instead to check that the data layer is reachable.
+    """
+    return {"status": "ok"}
+
+
 # ── Startup ───────────────────────────────────────────────────────────────────
 
-@app.on_event("startup")
-def startup():
-    """Ensure Postgres schema and Neo4j knowledge graph exist before the first request."""
+# Run the ingestion pipeline inside this process rather than as a separate
+# service. Needed where a free tier covers a web service but bills a
+# standalone worker; leave unset for the two-process local setup.
+RUN_WORKER = os.getenv("RUN_WORKER", "0") == "1"
+
+
+def _reap_orphaned_backtests() -> None:
+    """Fail jobs that a restart left mid-flight.
+
+    Backtests run in daemon threads, so anything still `running` when the
+    process stopped is gone. On a host that spins the instance down when idle
+    that is routine rather than exceptional, and without this the dashboard
+    shows a job stuck at "running" that will never finish or fail.
+    """
+    try:
+        for job in fetch_all_backtest_jobs():
+            if job.get("status") in ("running", "pending"):
+                update_backtest_job(
+                    job["id"], "failed", "Interrupted by a server restart."
+                )
+                logger.info("Reaped orphaned backtest job %s.", job["id"])
+    except Exception as exc:
+        logger.warning("Could not reap orphaned backtest jobs: %s", exc)
+
+
+def _deferred_startup() -> None:
+    """Schema check, graph seed, first SDI snapshot, and optionally the worker.
+
+    Runs off the startup path on purpose. A platform's deploy health check
+    waits for the port to bind, and this work — a Neo4j seed, an SDI
+    computation, then a full ingestion cycle including news fetch and Gemini
+    scoring — takes minutes. Doing it inline means the deploy is marked failed
+    before the app ever accepts a connection.
+    """
     try:
         init_schema()
-        upsert_sdi_snapshot(compute_current_sdi())
-        logger.info("Database schema verified on startup.")
+        logger.info("Database schema verified.")
     except Exception as exc:
-        logger.warning("Could not verify DB schema on startup: %s", exc)
+        logger.warning("Could not verify DB schema: %s", exc)
 
     try:
         from src.database.neo4j_graph import seed_graph
         seed_graph()
-        logger.info("Neo4j knowledge graph verified on startup.")
+        logger.info("Neo4j knowledge graph verified.")
     except Exception as exc:
-        logger.warning("Neo4j seed on startup failed (non-fatal): %s", exc)
+        logger.warning("Neo4j seed failed (non-fatal): %s", exc)
+
+    _reap_orphaned_backtests()
+
+    try:
+        upsert_sdi_snapshot(compute_current_sdi())
+        logger.info("Initial SDI snapshot persisted.")
+    except Exception as exc:
+        logger.warning("Initial SDI snapshot failed: %s", exc)
+
+    if not RUN_WORKER:
+        return
+
+    try:
+        import cron_worker
+
+        # One cycle now, because the scheduler's first tick is an interval
+        # away and a cold instance would otherwise serve hour-old data.
+        logger.info("RUN_WORKER=1 — running an initial ingestion cycle ...")
+        cron_worker.run_cycle()
+        cron_worker.start_background_scheduler()
+    except Exception as exc:
+        logger.error("In-process worker failed to start: %s", exc, exc_info=True)
+
+
+@app.on_event("startup")
+def startup():
+    """Bind the port immediately; do the slow work behind it."""
+    threading.Thread(
+        target=_deferred_startup, name="deferred-startup", daemon=True
+    ).start()
 
 
 # ── Endpoints: Metrics & Live Data ────────────────────────────────────────────
@@ -728,12 +807,32 @@ def get_backtest_jobs() -> list[dict[str, Any]]:
 
 @app.post("/api/backtest/trigger")
 def trigger_backtest(req: BacktestRequest) -> dict[str, Any]:
-    """Queue a new backtest job for the cron_worker to process."""
+    """Create a backtest job and start it immediately in this process.
+
+    Previously this only inserted a `pending` row and the cron worker picked
+    it up on a 30-second poll. That poll queried Postgres twice a minute in
+    perpetuity, which stopped a serverless database ever going idle — see
+    backtest_dispatch. Running it here removes the poll and starts the job now
+    rather than up to 30 s later.
+    """
     try:
         job_id = create_backtest_job(req.event_name)
         if not job_id:
             raise HTTPException(status_code=500, detail="Failed to create backtest job.")
-        return {"job_id": job_id, "status": "pending"}
+
+        if not dispatch_backtest(job_id, req.event_name):
+            # Capped for memory: concurrent backtests are what put a 512 MB
+            # instance over the edge. Fail the row too, so it does not sit at
+            # "pending" forever waiting for a poller that no longer exists.
+            update_backtest_job(
+                job_id, "failed", "Server busy — another backtest is already running."
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="Another backtest is already running. Try again shortly.",
+            )
+
+        return {"job_id": job_id, "status": "running"}
     except HTTPException:
         raise
     except Exception as exc:

@@ -4,11 +4,19 @@ cron_worker.py
 Background orchestration engine — the Shadow Cache heartbeat.
 
 Each pipeline step runs on its own independent schedule:
-  - market_trawler  / freight_trawler / sentinel_agent  — every 15 min (cheap yfinance)
-  - gdelt_collector / SDI snapshot - every 15 min
-  - ais_streamer - immediately, then every 60 min (2-min WebSocket window)
-  - portwatch       — every 12 hours (slow-moving port traffic data)
-  - backtest jobs   — every 30 s     (user-triggered; must start quickly)
+  - market / freight / GDELT / sentinel / SDI — every CRON_INTERVAL_MINUTES
+  - ais_streamer — immediately, then every AIS_INTERVAL_MINUTES
+  - portwatch    — every 12 hours (slow-moving port traffic data)
+  - retention    — every 24 hours (bounds vessel_telemetry growth)
+
+Backtests are not scheduled here. They are user-triggered and now start
+directly in the API process (see backtest_dispatch.py); this file used to
+poll Postgres for them every 30 seconds, which kept a serverless database
+permanently awake.
+
+Runs either as its own process or inside the API process — see
+``start_background_scheduler`` and RUN_WORKER in api.py. Both paths build the
+same schedule, so the two deployment shapes cannot drift apart.
 
 Usage:
   python cron_worker.py            # Normal background run
@@ -233,26 +241,6 @@ def step_portwatch() -> None:
     logger.info("PORTWATCH✓  Congestion scores updated")
 
 
-def step_backtests() -> None:
-    """Process any pending backtest jobs from the queue."""
-    from src.database.postgres_db import fetch_pending_backtest_jobs
-    from run_backtest import run_backtest
-
-    jobs = fetch_pending_backtest_jobs()
-    for job in jobs:
-        logger.info(f"BACKTEST✓  Starting job {job['id']} for {job['event_name']}")
-        try:
-            import subprocess
-            import sys
-            # Launch in background so we don't block the cron cycle
-            subprocess.Popen([
-                sys.executable, "run_backtest.py",
-                "--job-id", str(job["id"]),
-                "--event-name", job["event_name"]
-            ])
-        except Exception as exc:
-            logger.error(f"BACKTEST✗  Job {job['id']} failed to start: {exc}")
-
 def step_ais_and_snapshot() -> None:
     """Refresh AIS and immediately persist the SDI that uses that snapshot."""
     step_ais()
@@ -265,6 +253,58 @@ def _run_step_safely(name: str, fn: Callable[[], None]) -> None:
         fn()
     except Exception as exc:
         logger.error("Scheduled step failed: %s - %s", name, exc, exc_info=True)
+
+
+# A step is not killed for exceeding this — a thread cannot be safely
+# interrupted from outside, and the underlying HTTP/WebSocket calls own their
+# own timeouts. It exists so a stall is visible in the platform's logs rather
+# than looking like a service that quietly stopped updating.
+_SLOW_STEP_SECONDS = int(os.getenv("SLOW_STEP_WARN_SECONDS", "900"))
+
+_step_locks: dict[str, threading.Lock] = {}
+_step_locks_guard = threading.Lock()
+
+
+def _lock_for(name: str) -> threading.Lock:
+    with _step_locks_guard:
+        return _step_locks.setdefault(name, threading.Lock())
+
+
+def _dispatch(name: str, fn: Callable[[], None]) -> None:
+    """Run a scheduled step in its own thread, skipping overlapping runs.
+
+    ``schedule`` executes jobs inline on its polling loop, so a slow step
+    holds up every step queued behind it — an AIS window is 10 minutes by
+    default, and a stalled HTTP call is unbounded. Historical logs show
+    cycles that ran for hours, during which nothing else could have run.
+    Threading each step contains a stall to the step that caused it.
+
+    The per-name lock keeps a step from overlapping itself, which is the
+    behaviour the inline loop gave for free.
+    """
+    lock = _lock_for(name)
+    if not lock.acquire(blocking=False):
+        logger.warning("Skipping %s — its previous run is still in progress.", name)
+        return
+
+    def runner() -> None:
+        started = time.monotonic()
+        try:
+            fn()
+        except Exception as exc:
+            logger.error("Scheduled step failed: %s - %s", name, exc, exc_info=True)
+        finally:
+            elapsed = time.monotonic() - started
+            if elapsed > _SLOW_STEP_SECONDS:
+                logger.warning(
+                    "%s took %.0fs (over the %ds warning threshold) — possible stall.",
+                    name,
+                    elapsed,
+                    _SLOW_STEP_SECONDS,
+                )
+            lock.release()
+
+    threading.Thread(target=runner, name=f"job-{name}", daemon=True).start()
 
 
 # ---------------------------------------------------------------------------
@@ -307,6 +347,77 @@ def _run_cycle_unlocked() -> None:
     elapsed = (datetime.now(timezone.utc) - start).total_seconds()
     logger.info("CRON CYCLE DONE   %.1fs elapsed", elapsed)
     logger.info("=" * 60)
+
+
+# ---------------------------------------------------------------------------
+# Scheduling
+# ---------------------------------------------------------------------------
+
+def build_schedule() -> None:
+    """Register every recurring step. Shared by both deployment shapes.
+
+    Intervals default high because each wake-up costs more than the work
+    itself on a serverless database: it cannot scale to zero until several
+    idle minutes have passed, so frequent short jobs bill almost as much as
+    running continuously. Both are env-tunable for a host without that
+    constraint.
+    """
+    interval = int(os.getenv("CRON_INTERVAL_MINUTES", "60"))
+    ais_interval = int(os.getenv("AIS_INTERVAL_MINUTES", "60"))
+
+    logger.info(
+        "Scheduling — cycle every %dm, AIS every %dm, PortWatch 12h, retention 24h.",
+        interval,
+        ais_interval,
+    )
+
+    schedule.every(interval).minutes.do(_dispatch, "Cron Cycle", run_cycle)
+    schedule.every(ais_interval).minutes.do(
+        _dispatch, "AIS + SDI Refresh", step_ais_and_snapshot
+    )
+
+    # Port traffic is slow-moving — once every 12 hours is plenty
+    schedule.every(12).hours.do(_dispatch, "PortWatch", step_portwatch)
+
+    # Storage housekeeping — cheap, and the only thing stopping vessel_telemetry
+    # growing past a managed free tier's cap.
+    schedule.every(24).hours.do(_dispatch, "Retention", step_retention)
+
+
+def run_scheduler_loop(stop: threading.Event | None = None) -> None:
+    """Poll the schedule until stopped. Blocks; see start_background_scheduler."""
+    while stop is None or not stop.is_set():
+        schedule.run_pending()
+        time.sleep(10)
+
+
+def start_background_scheduler() -> threading.Thread | None:
+    """Run the pipeline inside the caller's process.
+
+    Used when the API and worker share one process — the shape a host bills
+    per service, or one whose free tier covers a web service but not a
+    separate worker.
+
+    Takes the same cross-process lock as standalone mode, so starting the API
+    with RUN_WORKER=1 while `python cron_worker.py` is already running leaves
+    scheduling to the existing worker instead of doubling every job and every
+    metered API call. Returns None in that case.
+    """
+    if not _WORKER_LOCK.acquire():
+        owner = f" (PID {_WORKER_LOCK.owner_pid})" if _WORKER_LOCK.owner_pid else ""
+        logger.warning(
+            "A cron worker is already running%s — not scheduling in this process.",
+            owner,
+        )
+        return None
+
+    build_schedule()
+    thread = threading.Thread(
+        target=run_scheduler_loop, name="cron-scheduler", daemon=True
+    )
+    thread.start()
+    logger.info("In-process cron scheduler started.")
+    return thread
 
 
 # ---------------------------------------------------------------------------
@@ -359,8 +470,6 @@ def _run_worker(args: argparse.Namespace) -> None:
         return
 
     # Scheduled mode
-    interval = int(os.getenv("CRON_INTERVAL_MINUTES", "15"))
-    logger.info("Starting scheduled cron loop — every %d minutes.", interval)
     logger.info("Press Ctrl+C to stop.")
 
     # Run immediately on startup so the dashboard has current inputs.
@@ -373,28 +482,10 @@ def _run_worker(args: argparse.Namespace) -> None:
         logger.info("Running startup step: %s", name)
         _run_step_safely(name, fn)
 
-    # Cheap market data — every 15 min (yfinance, no rate limit concerns)
-    schedule.every(interval).minutes.do(run_cycle)
-
-    # AIS opens a 2-min WebSocket window — every 60 min to avoid hammering
-    schedule.every(60).minutes.do(
-        _run_step_safely, "AIS + SDI Refresh", step_ais_and_snapshot
-    )
-
-    # Port traffic is slow-moving — once every 12 hours is plenty
-    schedule.every(12).hours.do(_run_step_safely, "PortWatch", step_portwatch)
-
-    # Storage housekeeping — cheap, and the only thing stopping vessel_telemetry
-    # growing past a managed free tier's cap.
-    schedule.every(24).hours.do(_run_step_safely, "Retention", step_retention)
-
-    # Backtest jobs are user-triggered — must start within ~30 s of being queued
-    schedule.every(30).seconds.do(_run_step_safely, "Backtests", step_backtests)
+    build_schedule()
 
     try:
-        while True:
-            schedule.run_pending()
-            time.sleep(10)
+        run_scheduler_loop()
     except KeyboardInterrupt:
         logger.info("Cron worker stopped by user.")
 

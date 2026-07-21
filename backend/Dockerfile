@@ -43,8 +43,13 @@ EXPOSE 8000
 
 # Only meaningful for the API service; the worker exposes no port and the
 # platform simply ignores this.
+#
+# /healthz rather than a data endpoint: this fires every 30s for the life of
+# the container, and anything touching Postgres here would keep a serverless
+# database awake permanently. It also answers while the deferred startup work
+# is still running, so a slow first ingestion cycle cannot fail the deploy.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-    CMD curl -fsS "http://127.0.0.1:${PORT:-8000}/api/metrics/live" > /dev/null || exit 1
+    CMD curl -fsS "http://127.0.0.1:${PORT:-8000}/healthz" > /dev/null || exit 1
 
 # Shell form so ${PORT} injected by the platform is expanded at runtime.
 CMD ["sh", "-c", "uvicorn api:app --host 0.0.0.0 --port ${PORT:-8000}"]
