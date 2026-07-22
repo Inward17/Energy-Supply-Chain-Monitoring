@@ -384,6 +384,28 @@ def build_schedule() -> None:
     schedule.every(24).hours.do(_dispatch, "Retention", step_retention)
 
 
+def run_startup_steps() -> None:
+    """One-off steps that must not wait for their first scheduled tick.
+
+    AIS runs hourly and PortWatch twice a day. A process that only ever starts
+    those from the schedule serves stale vessel and port data for that whole
+    interval — and on a host that restarts on every config change, or idles the
+    instance out, the interval can reset before it ever elapses. Vessel
+    telemetry went a full day without a single new row that way while every
+    other feed kept writing normally.
+
+    Shared with the standalone worker so the two deployment shapes start from
+    the same state.
+    """
+    for name, fn in (
+        ("Initial AIS Snapshot", step_ais),
+        ("Post-AIS SDI Snapshot", step_sdi_snapshot),
+        ("Initial PortWatch", step_portwatch),
+    ):
+        logger.info("Running startup step: %s", name)
+        _run_step_safely(name, fn)
+
+
 def run_scheduler_loop(stop: threading.Event | None = None) -> None:
     """Poll the schedule until stopped. Blocks; see start_background_scheduler."""
     while stop is None or not stop.is_set():
@@ -474,13 +496,7 @@ def _run_worker(args: argparse.Namespace) -> None:
 
     # Run immediately on startup so the dashboard has current inputs.
     run_cycle()
-    for name, fn in (
-        ("Initial AIS Snapshot", step_ais),
-        ("Post-AIS SDI Snapshot", step_sdi_snapshot),
-        ("Initial PortWatch", step_portwatch),
-    ):
-        logger.info("Running startup step: %s", name)
-        _run_step_safely(name, fn)
+    run_startup_steps()
 
     build_schedule()
 

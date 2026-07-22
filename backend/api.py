@@ -193,6 +193,15 @@ def _deferred_startup() -> None:
         # away and a cold instance would otherwise serve hour-old data.
         logger.info("RUN_WORKER=1 — running an initial ingestion cycle ...")
         cron_worker.run_cycle()
+
+        # AIS and PortWatch are not part of a cycle — they are separate jobs on
+        # 60-minute and 12-hour timers. Without this the timers restart on every
+        # redeploy, so on a host that restarts for each config change they can
+        # go indefinitely without firing. That is exactly what happened: news,
+        # market and SDI kept updating while vessel telemetry stayed a day old.
+        # Runs before the scheduler so its own AIS job cannot overlap this one.
+        cron_worker.run_startup_steps()
+
         cron_worker.start_background_scheduler()
     except Exception as exc:
         logger.error("In-process worker failed to start: %s", exc, exc_info=True)
