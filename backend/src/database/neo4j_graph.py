@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import os
 import logging
+import time
 from typing import Any
 
 from neo4j import GraphDatabase, Driver
@@ -39,11 +40,36 @@ logger = logging.getLogger(__name__)
 
 _driver: Driver | None = None
 
+# After a failed connection, wait this long before trying again. Callers fall
+# back individually and many run per-article, so without a cooldown a single
+# cycle re-attempts the handshake dozens of times — roughly a second each
+# against a remote host. A cycle was observed spending 11 of its 47 seconds
+# retrying credentials that could not work. Short enough that a fixed
+# credential or a resumed instance is picked up within a cycle.
+_RETRY_COOLDOWN_SECONDS = float(os.getenv("NEO4J_RETRY_COOLDOWN_SECONDS", "120"))
+_last_failure_at: float = 0.0
+
+
+def reset_driver_backoff() -> None:
+    """Clear the failure cooldown so the next call reconnects immediately."""
+    global _last_failure_at
+    _last_failure_at = 0.0
+
 
 def get_driver() -> Driver | None:
     """Return (or lazily create) the shared Neo4j driver. Returns None if unavailable."""
-    global _driver
+    global _driver, _last_failure_at
     if _driver is None:
+        since_failure = time.monotonic() - _last_failure_at
+        if _last_failure_at and since_failure < _RETRY_COOLDOWN_SECONDS:
+            # Already known to be down; skip the handshake and let the caller
+            # fall back. Logged at debug so it does not bury real errors.
+            logger.debug(
+                "Neo4j still in failure cooldown (%.0fs of %.0fs remaining).",
+                _RETRY_COOLDOWN_SECONDS - since_failure, _RETRY_COOLDOWN_SECONDS,
+            )
+            return None
+
         uri  = os.getenv("NEO4J_URI", "neo4j://localhost:7687")
         user = os.getenv("NEO4J_USER", "neo4j")
         pwd  = os.getenv("NEO4J_PASSWORD", "")
@@ -65,8 +91,8 @@ def get_driver() -> Driver | None:
             # at localhost, and an unset NEO4J_USER defaults to "neo4j".
             logger.error(
                 "Neo4j connection failed (%s) at %s as %r — graph features "
-                "disabled, callers will use fallback data: %s",
-                type(exc).__name__, uri, user, exc,
+                "disabled for %.0fs, callers will use fallback data: %s",
+                type(exc).__name__, uri, user, _RETRY_COOLDOWN_SECONDS, exc,
             )
             if _driver is not None:
                 try:
@@ -74,6 +100,9 @@ def get_driver() -> Driver | None:
                 except Exception:
                     pass
             _driver = None
+            _last_failure_at = time.monotonic()
+        else:
+            _last_failure_at = 0.0
     return _driver
 
 
