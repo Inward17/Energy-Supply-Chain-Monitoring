@@ -658,7 +658,18 @@ def upsert_price(records: list[dict[str, Any]]) -> int:
 def fetch_latest_prices(
     tickers: list[str] | None = None, days: int = 60
 ) -> list[dict[str, Any]]:
-    """Fetch recent price rows for given tickers (default: all)."""
+    """Fetch recent price rows for given tickers (default: all).
+
+    `days` is bound as a parameter via make_interval rather than interpolated
+    into the SQL text. Every current caller passes a literal, so this was not
+    reachable, but an interpolated interval is one refactor away from being a
+    SQL injection sink.
+    """
+    try:
+        window_days = max(1, int(days))
+    except (TypeError, ValueError):
+        window_days = 60
+
     try:
         with get_conn() as conn:
             if tickers:
@@ -666,18 +677,19 @@ def fetch_latest_prices(
                     text(
                         "SELECT ticker, price_open, price_close, price_high, price_low, volume, trade_date "
                         "FROM market_prices WHERE ticker = ANY(:tickers) "
-                        f"AND trade_date >= CURRENT_DATE - INTERVAL '{days} days' "
+                        "AND trade_date >= CURRENT_DATE - make_interval(days => :days) "
                         "ORDER BY trade_date DESC"
                     ),
-                    {"tickers": tickers},
+                    {"tickers": tickers, "days": window_days},
                 ).mappings().all()
             else:
                 rows = conn.execute(
                     text(
                         "SELECT ticker, price_open, price_close, price_high, price_low, volume, trade_date "
-                        f"FROM market_prices WHERE trade_date >= CURRENT_DATE - INTERVAL '{days} days' "
+                        "FROM market_prices WHERE trade_date >= CURRENT_DATE - make_interval(days => :days) "
                         "ORDER BY ticker, trade_date DESC"
-                    )
+                    ),
+                    {"days": window_days},
                 ).mappings().all()
             return [dict(r) for r in rows]
     except Exception as exc:

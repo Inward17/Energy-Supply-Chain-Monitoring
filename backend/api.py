@@ -26,7 +26,7 @@ import pandas as pd
 from typing import Any
 from datetime import datetime, timedelta, date, timezone
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Path, Query
 from fastapi.middleware.cors import CORSMiddleware
 from src.utils.schemas import RerouteRequest, SprRequest, WarRoomRequest, BacktestRequest
 
@@ -99,14 +99,29 @@ CORS_ORIGINS = [
     if origin.strip()
 ]
 
+# A wildcard origin combined with credentialed requests lets any site read
+# authenticated responses, so refuse the combination rather than honouring a
+# misconfiguration. Credentials are only enabled when the origins are explicit.
+_CORS_ALLOW_CREDENTIALS = "*" not in CORS_ORIGINS
+if not _CORS_ALLOW_CREDENTIALS:
+    logger.warning(
+        "CORS_ORIGINS contains '*' — disabling allow_credentials. Set explicit "
+        "origins if the browser needs to send cookies or auth headers."
+    )
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=_CORS_ALLOW_CREDENTIALS,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 logger.info("CORS allowed origins: %s", CORS_ORIGINS)
+
+#: Returned to clients in place of raw exception text. Internal messages carry
+#: DB schema, file paths and driver internals that aid an attacker; the detail
+#: still reaches the server log for debugging.
+_INTERNAL_ERROR = "Internal server error"
 
 
 # ── Health ────────────────────────────────────────────────────────────────────
@@ -265,7 +280,7 @@ def get_live_metrics() -> dict[str, Any]:
         return {"status": "degraded", "error": str(exc)}
     except Exception as exc:
         logger.error("get_live_metrics failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
 
 
 @app.get("/api/risk/events")
@@ -321,7 +336,7 @@ def get_risk_events(limit: int = 10) -> list[dict[str, Any]]:
         return result
     except Exception as exc:
         logger.error("get_risk_events failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
 
 @app.get("/api/risk/events/{event_id}")
 def get_risk_event_detail(event_id: int) -> dict[str, Any]:
@@ -414,7 +429,7 @@ def get_risk_event_detail(event_id: int) -> dict[str, Any]:
         raise
     except Exception as exc:
         logger.error("get_risk_event_detail failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
 
 
 @app.get("/api/risk/chokepoints")
@@ -430,11 +445,13 @@ def get_chokepoint_matrix() -> list[dict[str, Any]]:
         return [{"status": "degraded", "error": str(exc)}]
     except Exception as exc:
         logger.error("get_chokepoint_matrix failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
 
 
 @app.get("/api/risk/chokepoints/{name}")
-def get_chokepoint_detail(name: str) -> dict[str, Any]:
+def get_chokepoint_detail(
+    name: str = Path(..., min_length=1, max_length=120),
+) -> dict[str, Any]:
     """Score attribution for one chokepoint — which events drove it and how."""
     try:
         detail = explain_chokepoint_risk(name)
@@ -445,11 +462,13 @@ def get_chokepoint_detail(name: str) -> dict[str, Any]:
         raise
     except Exception as exc:
         logger.error("get_chokepoint_detail failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
 
 
 @app.get("/api/risk/producers/{name}")
-def get_producer_detail(name: str) -> dict[str, Any]:
+def get_producer_detail(
+    name: str = Path(..., min_length=1, max_length=120),
+) -> dict[str, Any]:
     """Score attribution for one producer country."""
     try:
         detail = explain_producer_risk(name)
@@ -460,7 +479,7 @@ def get_producer_detail(name: str) -> dict[str, Any]:
         raise
     except Exception as exc:
         logger.error("get_producer_detail failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
 
 
 @app.get("/api/risk/producers")
@@ -476,7 +495,7 @@ def get_producer_matrix() -> list[dict[str, Any]]:
         return [{"status": "degraded", "error": str(exc)}]
     except Exception as exc:
         logger.error("get_producer_matrix failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
 
 
 @app.get("/api/risk/sdi-timeline")
@@ -525,7 +544,7 @@ def get_sdi_timeline() -> list[dict[str, Any]]:
         ]
     except Exception as exc:
         logger.error("get_sdi_timeline failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
 
 @app.get("/api/market/prices")
 def get_market_prices() -> dict[str, Any]:
@@ -581,7 +600,7 @@ def get_market_prices() -> dict[str, Any]:
         }
     except Exception as exc:
         logger.error("get_market_prices failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
 
 
 @app.get("/api/market/vessels")
@@ -602,7 +621,7 @@ def get_vessels() -> list[dict[str, Any]]:
         ]
     except Exception as exc:
         logger.error("get_vessels failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
 
 
 # ── Endpoints: Configuration Lists (drive dropdowns) ─────────────────────────
@@ -614,7 +633,7 @@ def list_chokepoints() -> list[str]:
         return get_chokepoint_list()
     except Exception as exc:
         logger.error("list_chokepoints failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
 
 
 @app.get("/api/config/refineries")
@@ -624,7 +643,7 @@ def list_refineries() -> list[str]:
         return get_refinery_list()
     except Exception as exc:
         logger.error("list_refineries failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
 
 
 @app.get("/api/config/grades")
@@ -634,7 +653,7 @@ def list_grades() -> list[str]:
         return get_crude_grade_list()
     except Exception as exc:
         logger.error("list_grades failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
 
 
 # ── Endpoints: Agent Orchestration ───────────────────────────────────────────
@@ -671,7 +690,7 @@ def run_reroute(req: RerouteRequest) -> dict[str, Any]:
         }
     except Exception as exc:
         logger.error("run_reroute failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
 
 
 @app.post("/api/orchestrator/spr")
@@ -705,7 +724,7 @@ def run_spr(req: SprRequest) -> dict[str, Any]:
         return {**result, "burndown_series": burndown_list}
     except Exception as exc:
         logger.error("run_spr failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
 
 
 @app.post("/api/orchestrator/war-room")
@@ -802,7 +821,7 @@ def run_war_room(req: WarRoomRequest) -> dict[str, Any]:
         raise
     except Exception as exc:
         logger.error("run_war_room failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
 
 @app.get("/api/backtest/jobs")
 def get_backtest_jobs() -> list[dict[str, Any]]:
@@ -811,7 +830,7 @@ def get_backtest_jobs() -> list[dict[str, Any]]:
         return fetch_all_backtest_jobs()
     except Exception as exc:
         logger.error("get_backtest_jobs failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
 
 
 @app.post("/api/backtest/trigger")
@@ -846,13 +865,13 @@ def trigger_backtest(req: BacktestRequest) -> dict[str, Any]:
         raise
     except Exception as exc:
         logger.error("trigger_backtest failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
 
 
 @app.get("/api/backtest/{event_name}")
 def get_backtest(
-    event_name: str,
-    sdi_threshold: float = 65.0,
+    event_name: str = Path(..., min_length=1, max_length=120),
+    sdi_threshold: float = Query(65.0, ge=0.0, le=100.0),
 ) -> dict[str, Any]:
     """
     Return the historical backtest time-series and computed verdict for the given event.
@@ -987,4 +1006,4 @@ def get_backtest(
         raise
     except Exception as exc:
         logger.error("get_backtest failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)

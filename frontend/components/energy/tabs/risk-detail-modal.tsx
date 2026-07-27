@@ -4,6 +4,7 @@ import dynamic from "next/dynamic"
 import { ExternalLink, Anchor, Gauge } from "lucide-react"
 import { DetailShell, Section, RailCard } from "./detail-shell"
 import { coordsFor, CHOKEPOINT_ZOOM, PRODUCER_ZOOM } from "../geo"
+import { safeExternalUrl, displayDomain } from "@/lib/utils"
 import type { ChokepointDetail, ProducerDetail, RiskContributor } from "@/lib/api"
 
 const MiniMap = dynamic(() => import("./mini-map"), {
@@ -17,14 +18,6 @@ const MiniMap = dynamic(() => import("./mini-map"), {
 
 const riskTone = (v: number) => (v > 0.6 ? "text-crit" : v > 0.4 ? "text-orange" : "text-safe")
 const riskBar = (v: number) => (v > 0.6 ? "bg-crit" : v > 0.4 ? "bg-orange" : "bg-safe")
-
-function domainOf(url: string) {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "")
-  } catch {
-    return url
-  }
-}
 
 /** One event's contribution, showing the arithmetic that produced it. */
 function ContributorRow({ c, isDriver }: { c: RiskContributor; isDriver: boolean }) {
@@ -65,18 +58,23 @@ function ContributorRow({ c, isDriver }: { c: RiskContributor; isDriver: boolean
 
       {c.source_urls?.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-2">
-          {c.source_urls.slice(0, 4).map((u, i) => (
-            <a
-              key={i}
-              href={u}
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center gap-1 text-[10px] text-accent hover:underline"
-            >
-              <ExternalLink className="h-2.5 w-2.5" />
-              {domainOf(u)}
-            </a>
-          ))}
+          {c.source_urls.slice(0, 4).map((u, i) => {
+            // Untrusted provider scheme — drop anything but http(s).
+            const href = safeExternalUrl(u)
+            if (!href) return null
+            return (
+              <a
+                key={i}
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-[10px] text-accent hover:underline"
+              >
+                <ExternalLink className="h-2.5 w-2.5" />
+                {displayDomain(href)}
+              </a>
+            )
+          })}
         </div>
       )}
     </li>

@@ -18,6 +18,7 @@ import { ChokepointDetailModal, ProducerDetailModal } from "./risk-detail-modal"
 import { chartTooltip } from "../chart-tooltip"
 import { useChartTheme } from "../chart-theme"
 import { InfoTooltip } from "@/components/ui/info-tooltip"
+import { safeExternalUrl, displayDomain } from "@/lib/utils"
 import { Loader2, ExternalLink } from "lucide-react"
 import { EventDetailModal } from "./event-detail-modal"
 
@@ -234,18 +235,16 @@ export function RiskIntelligence({ autoRefresh, refreshToken, onRefreshComplete 
                           <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted">GDELT Event Sources</p>
                           <ul className="space-y-1.5 max-h-32 overflow-y-auto pr-1 [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-track">
                             {e.source_urls.map((url, idx) => {
-                              try {
-                                const domain = new URL(url).hostname.replace(/^www\./, '')
-                                return (
-                                  <li key={idx} className="truncate">
-                                    <a href={url} target="_blank" rel="noreferrer" className="text-[11px] text-accent hover:underline">
-                                      {domain}
-                                    </a>
-                                  </li>
-                                )
-                              } catch {
-                                return null
-                              }
+                              // Untrusted provider scheme — http(s) only.
+                              const href = safeExternalUrl(url)
+                              if (!href) return null
+                              return (
+                                <li key={idx} className="truncate">
+                                  <a href={href} target="_blank" rel="noopener noreferrer" className="text-[11px] text-accent hover:underline">
+                                    {displayDomain(href)}
+                                  </a>
+                                </li>
+                              )
                             })}
                           </ul>
                           {/* Arrow */}

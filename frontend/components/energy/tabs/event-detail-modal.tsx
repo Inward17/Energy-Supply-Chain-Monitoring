@@ -3,6 +3,7 @@
 import { ExternalLink, Anchor, Activity, ShieldAlert, AlertTriangle } from "lucide-react"
 import { SeverityBadge } from "../ui"
 import { DetailShell, Section, RailCard } from "./detail-shell"
+import { safeExternalUrl, displayDomain } from "@/lib/utils"
 import type { RiskEventDetail } from "@/lib/api"
 
 interface EventDetailModalProps {
@@ -114,24 +115,23 @@ export function EventDetailModal({ event, onClose }: EventDetailModalProps) {
             <Section label={`Sourced Articles (${event.source_urls.length})`}>
               <ul className="space-y-2">
                 {event.source_urls.map((url, idx) => {
-                  try {
-                    const domain = new URL(url).hostname.replace(/^www\./, "")
-                    return (
-                      <li key={idx} className="truncate text-sm">
-                        <a
-                          href={url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="flex items-center gap-1.5 text-accent transition-colors hover:underline"
-                        >
-                          <ExternalLink className="h-3 w-3 shrink-0" />
-                          {domain}
-                        </a>
-                      </li>
-                    )
-                  } catch {
-                    return null
-                  }
+                  // Provider-supplied scheme is untrusted; render unsafe ones
+                  // as inert text rather than a clickable link.
+                  const href = safeExternalUrl(url)
+                  if (!href) return null
+                  return (
+                    <li key={idx} className="truncate text-sm">
+                      <a
+                        href={href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 text-accent transition-colors hover:underline"
+                      >
+                        <ExternalLink className="h-3 w-3 shrink-0" />
+                        {displayDomain(href)}
+                      </a>
+                    </li>
+                  )
                 })}
               </ul>
             </Section>
