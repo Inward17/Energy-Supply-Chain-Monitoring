@@ -4,6 +4,7 @@ import { MapContainer, TileLayer, CircleMarker, Circle, Tooltip } from "react-le
 import "leaflet/dist/leaflet.css"
 import { useTheme } from "@/components/theme-provider"
 import { useChartTheme } from "../chart-theme"
+import { basemap } from "../geo"
 
 /**
  * Small locator map for the drill-down modals: where the chokepoint or
@@ -26,10 +27,7 @@ export default function MiniMap({
   const { theme } = useTheme()
   const c = useChartTheme()
 
-  const tileUrl =
-    theme === "dark"
-      ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"
-      : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"
+  const tiles = basemap(theme)
 
   const tone = risk > 0.6 ? c.crit : risk > 0.4 ? c.orange : c.safe
 
@@ -40,12 +38,11 @@ export default function MiniMap({
       minZoom={2}
       scrollWheelZoom={false}
       zoomControl={false}
-      attributionControl={false}
       style={{ height: "100%", width: "100%", background: "var(--t-map-bg)" }}
     >
       {/* Keyed so a theme switch swaps basemaps cleanly without remounting the
           map itself (which would reset the view). */}
-      <TileLayer key={tileUrl} url={tileUrl} noWrap />
+      <TileLayer key={tiles.url} url={tiles.url} attribution={tiles.attribution} noWrap />
 
       {/* Halo scaled by risk, so severity reads at a glance. */}
       <Circle

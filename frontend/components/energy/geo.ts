@@ -53,3 +53,27 @@ export function coordsFor(kind: "chokepoint" | "producer", name: string): [numbe
   const table = kind === "chokepoint" ? CHOKEPOINT_COORDS : PRODUCER_COORDS
   return table[name] ?? null
 }
+
+/**
+ * Basemap tiles for both maps.
+ *
+ * CARTO began requiring an API key in Sept 2026 — keyless requests get an
+ * "API KEY REQUIRED" watermark tile. Set NEXT_PUBLIC_CARTO_KEY (free, from
+ * carto.com/basemaps/apikey) to use CARTO; without it we fall back to Esri's
+ * keyless Canvas basemap so the map never renders as watermarks.
+ */
+const CARTO_KEY = process.env.NEXT_PUBLIC_CARTO_KEY
+
+export function basemap(theme: "dark" | "light"): { url: string; attribution: string } {
+  if (CARTO_KEY) {
+    return {
+      url: `https://{s}.basemaps.cartocdn.com/${theme === "dark" ? "dark_all" : "light_all"}/{z}/{x}/{y}.png?key=${encodeURIComponent(CARTO_KEY)}`,
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    }
+  }
+  return {
+    url: `https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_${theme === "dark" ? "Dark" : "Light"}_Gray_Base/MapServer/tile/{z}/{y}/{x}`,
+    attribution: "Tiles &copy; Esri &mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors",
+  }
+}

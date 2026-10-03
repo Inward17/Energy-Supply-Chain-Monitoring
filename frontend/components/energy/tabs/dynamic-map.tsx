@@ -5,6 +5,7 @@ import "leaflet/dist/leaflet.css"
 import type { VesselPosition, RiskEvent } from "@/lib/api"
 import { useTheme } from "@/components/theme-provider"
 import { useChartTheme, severityHex } from "../chart-theme"
+import { basemap } from "../geo"
 
 interface DynamicMapProps {
   vessels: VesselPosition[]
@@ -32,10 +33,7 @@ export default function DynamicMap({ vessels, events }: DynamicMapProps) {
     [90, 180],
   ]
 
-  const tileUrl =
-    theme === "dark"
-      ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"
-      : "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"
+  const tiles = basemap(theme)
 
   // Light basemap tiles are higher-contrast, so the risk circles need a little
   // more fill to stay as legible as they are over the dark basemap.
@@ -50,15 +48,14 @@ export default function DynamicMap({ vessels, events }: DynamicMapProps) {
       maxBoundsViscosity={1.0}
       style={{ height: "100%", minHeight: "540px", width: "100%", background: "var(--t-map-bg)", position: "absolute", top: 0, left: 0, right: 0, bottom: 0 }}
       zoomControl={false}
-      attributionControl={false}
     >
       {/* `key` remounts only the tile layer on theme change so stale tiles are
           dropped cleanly. The MapContainer must NOT be keyed — that would reset
           the user's pan/zoom. */}
       <TileLayer
-        key={tileUrl}
-        url={tileUrl}
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+        key={tiles.url}
+        url={tiles.url}
+        attribution={tiles.attribution}
         noWrap={true}
         bounds={maxBounds}
       />

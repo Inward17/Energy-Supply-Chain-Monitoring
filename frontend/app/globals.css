@@ -215,3 +215,14 @@
 .leaflet-container a.leaflet-popup-close-button {
   color: var(--t-muted);
 }
+
+/* Tile attribution is required by the basemap terms; restyle Leaflet's white
+   box so it sits quietly on both themes. */
+.leaflet-container .leaflet-control-attribution {
+  background: color-mix(in srgb, var(--t-panel) 80%, transparent);
+  color: var(--t-faint);
+  font-size: 9px;
+}
+.leaflet-container .leaflet-control-attribution a {
+  color: var(--t-muted);
+}
