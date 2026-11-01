@@ -1,0 +1,32 @@
+# Dependabot — opens PRs to bump dependencies. Each PR runs through the same
+# CI as a human PR, so an upgrade that breaks the build is caught before merge.
+# Minor/patch bumps are grouped into one weekly PR per ecosystem to keep noise down.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels: [dependencies, frontend]
+    groups:
+      frontend-minor:
+        update-types: [minor, patch]
+
+  - package-ecosystem: pip
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels: [dependencies, backend]
+    groups:
+      backend-minor:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    labels: [dependencies, ci]

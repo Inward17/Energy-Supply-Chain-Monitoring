@@ -1,228 +1,285 @@
 @import 'tailwindcss';
-@plugin 'tailwindcss-animate';
 
-@custom-variant dark (&:is(.dark *));
+/* MERIDIAN v1 — instrument-panel system, dark and light. Tokens mirror the
+   Claude Design canvas (MERIDIAN Mobile & Data Health). */
+/* Palette. Every colour in the UI is one of these variables, so a theme is a
+   value swap: dark (default) uses the original canvas hexes, .light the
+   matched light values. Names are the dark hex, for traceability to the
+   Claude Design canvas. */
+:root {
+  --x-06121f: #06121f;
+  --x-07090c: #07090c;
+  --x-090c10: #090c10;
+  --x-0a0d11: #0a0d11;
+  --x-0a0e13: #0a0e13;
+  --x-0a1410: #0a1410;
+  --x-0c1015: #0c1015;
+  --x-0d1218: #0d1218;
+  --x-0d1a14: #0d1a14;
+  --x-0e1319: #0e1319;
+  --x-0f141a: #0f141a;
+  --x-0f151c: #0f151c;
+  --x-0f1c2b: #0f1c2b;
+  --x-10161d: #10161d;
+  --x-111a24: #111a24;
+  --x-121921: #121921;
+  --x-121a24: #121a24;
+  --x-14322a: #14322a;
+  --x-151c25: #151c25;
+  --x-17130a: #17130a;
+  --x-17392b: #17392b;
+  --x-1a1410: #1a1410;
+  --x-1a222c: #1a222c;
+  --x-1a2330: #1a2330;
+  --x-1c0f11: #1c0f11;
+  --x-1c2530: #1c2530;
+  --x-1e1909: #1e1909;
+  --x-1e190c: #1e190c;
+  --x-1e2731: #1e2731;
+  --x-1e4a36: #1e4a36;
+  --x-1f1112: #1f1112;
+  --x-1f4a36: #1f4a36;
+  --x-24405f: #24405f;
+  --x-252f3b: #252f3b;
+  --x-2a3542: #2a3542;
+  --x-2b4a6b: #2b4a6b;
+  --x-33290f: #33290f;
+  --x-3a2414: #3a2414;
+  --x-3a3014: #3a3014;
+  --x-3a4656: #3a4656;
+  --x-3b3215: #3b3215;
+  --x-3d1c1e: #3d1c1e;
+  --x-3f3417: #3f3417;
+  --x-3fcf8e: #3fcf8e;
+  --x-44201f: #44201f;
+  --x-45291a: #45291a;
+  --x-4a181c: #4a181c;
+  --x-4a1d20: #4a1d20;
+  --x-4a2224: #4a2224;
+  --x-5a4a1e: #5a4a1e;
+  --x-5aaeff: #5aaeff;
+  --x-6b5a24: #6b5a24;
+  --x-6fe0ab: #6fe0ab;
+  --x-7a8697: #7a8697;
+  --x-94a0af: #94a0af;
+  --x-9cceff: #9cceff;
+  --x-aeb8c5: #aeb8c5;
+  --x-c3cbd5: #c3cbd5;
+  --x-c9a8ff: #c9a8ff;
+  --x-e6eaef: #e6eaef;
+  --x-f2c14e: #f2c14e;
+  --x-f5f7fa: #f5f7fa;
+  --x-ff5a5f: #ff5a5f;
+  --x-ff8a3d: #ff8a3d;
+  --x-ff8a8d: #ff8a8d;
+  --x-ffa86b: #ffa86b;
+  --x-ffb86b: #ffb86b;
+}
+html.light {
+  --x-06121f: #ffffff;
+  --x-07090c: #f4f2ee;
+  --x-090c10: #fbfaf8;
+  --x-0a0d11: #fbfaf8;
+  --x-0a0e13: #f7f6f3;
+  --x-0a1410: #ddf2e6;
+  --x-0c1015: #f3f1ed;
+  --x-0d1218: #f7f6f3;
+  --x-0d1a14: #e9f6ef;
+  --x-0e1319: #ffffff;
+  --x-0f141a: #ffffff;
+  --x-0f151c: #f1efeb;
+  --x-0f1c2b: #e6f0fb;
+  --x-10161d: #ffffff;
+  --x-111a24: #e6f0fb;
+  --x-121921: #ffffff;
+  --x-121a24: #e6f0fb;
+  --x-14322a: #cdebdb;
+  --x-151c25: #f1efeb;
+  --x-17130a: #fbf5e4;
+  --x-17392b: #ddf2e6;
+  --x-1a1410: #fceee3;
+  --x-1a222c: #ece9e4;
+  --x-1a2330: #e6e3dd;
+  --x-1c0f11: #fbe9ea;
+  --x-1c2530: #e2ded7;
+  --x-1e1909: #fbf3de;
+  --x-1e190c: #fbf3de;
+  --x-1e2731: #e3e0da;
+  --x-1e4a36: #bfe3cf;
+  --x-1f1112: #fbe9ea;
+  --x-1f4a36: #bfe3cf;
+  --x-24405f: #b9d3f1;
+  --x-252f3b: #d6d2cb;
+  --x-2a3542: #d3cec6;
+  --x-2b4a6b: #b9d3f1;
+  --x-33290f: #f3e3b5;
+  --x-3a2414: #f1ccae;
+  --x-3a3014: #efe3bf;
+  --x-3a4656: #c9c5be;
+  --x-3b3215: #f8edc9;
+  --x-3d1c1e: #f5d0d1;
+  --x-3f3417: #ebddb4;
+  --x-3fcf8e: #188a55;
+  --x-44201f: #f0c3c5;
+  --x-45291a: #fce6d6;
+  --x-4a181c: #f2c6c8;
+  --x-4a1d20: #fbe0e1;
+  --x-4a2224: #f0c3c5;
+  --x-5a4a1e: #ebd9a6;
+  --x-5aaeff: #1f6fd1;
+  --x-6b5a24: #e8d49a;
+  --x-6fe0ab: #157a4b;
+  --x-7a8697: #6e7783;
+  --x-94a0af: #5f6874;
+  --x-9cceff: #1a5db0;
+  --x-aeb8c5: #4f5864;
+  --x-c3cbd5: #3c434d;
+  --x-c9a8ff: #7b4fd1;
+  --x-e6eaef: #2a2f37;
+  --x-f2c14e: #946b05;
+  --x-f5f7fa: #14171c;
+  --x-ff5a5f: #cc2f36;
+  --x-ff8a3d: #c85a12;
+  --x-ff8a8d: #b42328;
+  --x-ffa86b: #b5530f;
+  --x-ffb86b: #d9822b;
+}
 
-/*
- * MERIDIAN design tokens.
- *
- * `@theme inline` is required, not stylistic: with a plain `@theme`, Tailwind
- * emits `--color-panel: var(--t-panel)` into `:root`, so the indirection
- * resolves in `:root` scope and the `.dark` overrides below would never take
- * effect. `inline` compiles `bg-panel` straight to `var(--t-panel)`, resolved
- * at the element, which is what makes runtime theme switching work.
- *
- * Chart colours are mirrored in components/energy/chart-theme.ts (Recharts
- * takes hex props, not classes). Keep the two in sync.
- */
 @theme inline {
-  --font-sans: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
-  --font-heading: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-archivo), system-ui, sans-serif;
   --font-mono: var(--font-plex-mono), ui-monospace, monospace;
 
-  /* surfaces */
-  --color-bg: var(--t-bg);
-  --color-panel: var(--t-panel);
-  --color-panel-2: var(--t-panel-2);
-  --color-input-bg: var(--t-input-bg);
-  --color-map-bg: var(--t-map-bg);
+  --color-ground: var(--x-07090c);
+  --color-side: var(--x-0a0d11);
+  --color-top: var(--x-090c10);
+  --color-panel: var(--x-0e1319);
+  --color-well: var(--x-0a0e13);
+  --color-raise: var(--x-151c25);
+  --color-line: var(--x-1e2731);
+  --color-hair: var(--x-1a222c);
+  --color-edge: var(--x-252f3b);
+  --color-track: var(--x-1a2330);
 
-  /* lines */
-  --color-border: var(--t-border);
-  --color-hair: var(--t-hair);
-  --color-track: var(--t-track);
+  --color-head: var(--x-f5f7fa);
+  --color-fg: var(--x-e6eaef);
+  --color-soft: var(--x-c3cbd5);
+  --color-muted: var(--x-aeb8c5);
+  --color-dim: var(--x-94a0af);
+  --color-faint: var(--x-7a8697);
 
-  /* type */
-  --color-fg: var(--t-fg);
-  --color-head: var(--t-head);
-  --color-muted: var(--t-muted);
-  --color-faint: var(--t-faint);
+  --color-accent: var(--x-5aaeff);
+  --color-accent-hi: var(--x-9cceff);
+  --color-accent-soft: var(--x-0f1c2b);
+  --color-accent-line: var(--x-2b4a6b);
 
-  /* semantic — the `-soft` values are pre-mixed rgba on purpose. Use
-     `bg-crit-soft`, never `bg-crit/15`: the alpha differs per theme and an
-     opacity modifier would flatten that (and wash out in light mode). */
-  --color-accent: var(--t-accent);
-  --color-accent-soft: var(--t-accent-soft);
-  --color-accent-border: var(--t-accent-border);
-  --color-crit: var(--t-crit);
-  --color-crit-soft: var(--t-crit-soft);
-  --color-safe: var(--t-safe);
-  --color-safe-soft: var(--t-safe-soft);
-  --color-warn: var(--t-warn);
-  --color-warn-soft: var(--t-warn-soft);
-  --color-orange: var(--t-orange);
-  --color-orange-soft: var(--t-orange-soft);
+  --color-safe: var(--x-3fcf8e);
+  --color-safe-text: var(--x-6fe0ab);
+  --color-safe-soft: var(--x-0d1a14);
+  --color-safe-line: var(--x-1e4a36);
 
-  /* incidental */
-  --color-row-hi: var(--t-row-hi);
-  --color-stripe: var(--t-stripe);
+  --color-warn: var(--x-f2c14e);
+  --color-warn-soft: var(--x-1e1909);
+  --color-warn-line: var(--x-5a4a1e);
+  --color-warn-box: var(--x-17130a);
+  --color-warn-boxline: var(--x-3f3417);
 
-  --radius: 0.5rem;
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
+  --color-orange: var(--x-ff8a3d);
+  --color-orange-text: var(--x-ffa86b);
+  --color-orange-soft: var(--x-1a1410);
+  --color-orange-line: var(--x-3a2414);
+
+  --color-crit: var(--x-ff5a5f);
+  --color-crit-text: var(--x-ff8a8d);
+  --color-crit-soft: var(--x-1c0f11);
+  --color-crit-line: var(--x-44201f);
 }
 
-:root {
-  color-scheme: light;
-  --t-bg: #f4f2ee;
-  --t-panel: #ffffff;
-  --t-panel-2: #faf8f4;
-  --t-border: #e3ded4;
-  --t-hair: #ece7dd;
-  --t-track: #e6e1d7;
-  --t-fg: #1c2230;
-  --t-head: #12161f;
-  --t-muted: #6b7484;
-  --t-faint: #98a0b0;
-  --t-accent: #2f5bd0;
-  --t-accent-soft: rgba(47, 91, 208, 0.1);
-  --t-accent-border: rgba(47, 91, 208, 0.35);
-  --t-crit: #d64550;
-  --t-crit-soft: rgba(214, 69, 80, 0.1);
-  --t-safe: #1f9d6b;
-  --t-safe-soft: rgba(31, 157, 107, 0.1);
-  --t-warn: #c98a1a;
-  --t-warn-soft: rgba(201, 138, 26, 0.12);
-  --t-orange: #d97a2b;
-  --t-orange-soft: rgba(217, 122, 43, 0.12);
-  --t-row-hi: rgba(31, 157, 107, 0.07);
-  --t-input-bg: #faf8f4;
-  --t-map-bg: #eef1f4;
-  --t-stripe: rgba(47, 91, 208, 0.05);
-}
-
-.dark {
+html,
+body {
+  background: var(--x-07090c);
+  color: var(--x-e6eaef);
   color-scheme: dark;
-  --t-bg: #0b0f16;
-  --t-panel: #0e131d;
-  --t-panel-2: #0b0f16;
-  --t-border: #1f2836;
-  --t-hair: #1a2331;
-  --t-track: #1f2836;
-  --t-fg: #e6ebf2;
-  --t-head: #ffffff;
-  --t-muted: #7c8aa0;
-  --t-faint: #566178;
-  --t-accent: #59a6ff;
-  --t-accent-soft: rgba(89, 166, 255, 0.12);
-  --t-accent-border: rgba(89, 166, 255, 0.4);
-  --t-crit: #ff5c6c;
-  --t-crit-soft: rgba(255, 92, 108, 0.14);
-  --t-safe: #46d19e;
-  --t-safe-soft: rgba(70, 209, 158, 0.14);
-  --t-warn: #f5b642;
-  --t-warn-soft: rgba(245, 182, 66, 0.14);
-  --t-orange: #ff9f45;
-  --t-orange-soft: rgba(255, 159, 69, 0.14);
-  --t-row-hi: rgba(70, 209, 158, 0.08);
-  --t-input-bg: #0b0f16;
-  --t-map-bg: #070b11;
-  --t-stripe: rgba(89, 166, 255, 0.06);
+}
+html.light,
+html.light body {
+  color-scheme: light;
+}
+/* Light panels need a soft drop shadow in place of the dark top highlight. */
+html.light .panel {
+  box-shadow: 0 1px 2px rgba(20, 23, 28, 0.06);
 }
 
-@layer base {
-  html {
-    @apply font-sans;
-  }
-  body {
-    @apply bg-bg text-fg font-sans antialiased;
-  }
+/* Raised panel: faint top highlight, as on the canvas. */
+.panel {
+  background: var(--color-panel);
+  border: 1px solid var(--color-line);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
-/* Slim range slider matching the design: a 4px track with a panel-filled,
-   accent-ringed handle. The filled portion is supplied per-input as an inline
-   linear-gradient, since it depends on the current value. Kept as a real
-   <input type="range"> for keyboard/a11y support. */
-.slider-slim {
-  -webkit-appearance: none;
-  appearance: none;
-  height: 4px;
-  border-radius: 3px;
-  outline: none;
-  /* Fallback when no inline progress gradient is supplied. */
-  background: var(--t-track);
-}
-.slider-slim::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 13px;
-  height: 13px;
-  border-radius: 50%;
-  background: var(--t-panel);
-  border: 2px solid var(--t-accent);
-  cursor: pointer;
-}
-.slider-slim::-moz-range-thumb {
-  width: 13px;
-  height: 13px;
-  border-radius: 50%;
-  background: var(--t-panel);
-  border: 2px solid var(--t-accent);
-  cursor: pointer;
-}
-.slider-slim:focus-visible::-webkit-slider-thumb {
-  box-shadow: 0 0 0 3px var(--t-accent-soft);
+.dotgrid {
+  background-image: radial-gradient(var(--x-1c2530) 1px, transparent 1.2px);
+  background-size: 16px 16px;
 }
 
-/* Thin scrollbars, themed. */
-::-webkit-scrollbar {
-  width: 9px;
-  height: 9px;
+/* "No data" fill — used wherever a signal is missing rather than zero. */
+.hatch {
+  background: repeating-linear-gradient(135deg, var(--x-2a3542) 0 2px, transparent 2px 5px);
 }
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: var(--t-track);
-  border-radius: 6px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--t-muted);
+.hatch-card {
+  background: repeating-linear-gradient(135deg, var(--x-0e1319) 0 10px, var(--x-0c1015) 10px 20px);
 }
 
-@keyframes omping {
-  0% {
-    transform: scale(1);
-    opacity: 0.6;
-  }
-  75%,
-  100% {
-    transform: scale(2.4);
-    opacity: 0;
-  }
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-dim);
 }
 
-/* Leaflet Tailwind Resets */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Leaflet resets + themed chrome */
+.leaflet-container {
+  background: var(--x-0a0e13);
+  font-family: var(--font-archivo), system-ui, sans-serif;
+}
 .leaflet-container img {
   max-width: none !important;
   max-height: none !important;
 }
-
-.leaflet-container {
-  z-index: 10;
-}
-
-/* Leaflet popups are Leaflet-owned DOM outside React and ship a hardcoded
-   white background — without this they are white-on-white in dark mode. */
 .leaflet-popup-content-wrapper,
 .leaflet-popup-tip {
-  background: var(--t-panel);
-  color: var(--t-fg);
+  background: var(--x-10161d);
+  color: var(--x-e6eaef);
+  border: 1px solid var(--x-2a3542);
 }
-.leaflet-container a.leaflet-popup-close-button {
-  color: var(--t-muted);
-}
-
-/* Tile attribution is required by the basemap terms; restyle Leaflet's white
-   box so it sits quietly on both themes. */
 .leaflet-container .leaflet-control-attribution {
-  background: color-mix(in srgb, var(--t-panel) 80%, transparent);
-  color: var(--t-faint);
+  background: color-mix(in srgb, var(--x-0e1319) 85%, transparent);
+  color: var(--x-7a8697);
   font-size: 9px;
 }
 .leaflet-container .leaflet-control-attribution a {
-  color: var(--t-muted);
+  color: var(--x-aeb8c5);
+}
+.leaflet-tooltip.m-label {
+  background: color-mix(in srgb, var(--x-10161d) 94%, transparent);
+  border: 1px solid var(--x-252f3b);
+  color: var(--x-f5f7fa);
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: none;
+}
+.leaflet-tooltip.m-label::before {
+  display: none;
+}
+
+/* Bottom tab bar clears the iOS home indicator. */
+.safe-bottom {
+  padding-bottom: max(14px, env(safe-area-inset-bottom));
 }

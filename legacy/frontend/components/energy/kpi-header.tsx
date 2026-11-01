@@ -28,12 +28,16 @@ type KpiHeaderProps = {
   autoRefresh: boolean
   refreshToken: number
   onRefreshComplete: (target: "kpi" | "risk", refreshToken: number) => void
+  /** Latest metrics, or null when the request failed. */
+  onMetrics?: (metrics: LiveMetrics | null) => void
 }
 
-export function KpiHeader({ autoRefresh, refreshToken, onRefreshComplete }: KpiHeaderProps) {
+export function KpiHeader({ autoRefresh, refreshToken, onRefreshComplete, onMetrics }: KpiHeaderProps) {
   const [live, setLive] = useState<LiveMetrics | null>(null)
   const mountedRef = useRef(true)
   const inFlightRef = useRef<Promise<void> | null>(null)
+  const onMetricsRef = useRef(onMetrics)
+  onMetricsRef.current = onMetrics
 
   const load = useCallback(() => {
     if (inFlightRef.current) return inFlightRef.current
@@ -41,9 +45,11 @@ export function KpiHeader({ autoRefresh, refreshToken, onRefreshComplete }: KpiH
     const request = fetchLiveMetrics()
       .then((metrics) => {
         if (mountedRef.current) setLive(metrics)
+        onMetricsRef.current?.(metrics)
       })
       .catch((error) => {
         console.error("Failed to load live metrics:", error)
+        onMetricsRef.current?.(null)
       })
 
     inFlightRef.current = request

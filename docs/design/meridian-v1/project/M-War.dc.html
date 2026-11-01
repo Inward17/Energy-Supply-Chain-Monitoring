@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>War Room mobile</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..800&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#5AAEFF}a:hover{color:#9CCEFF}
+</style>
+</helmet>
+<div style="width: 390px; height: 1500px; box-sizing: border-box; background: #07090C; color: #E6EAEF; font-family: Archivo, system-ui, sans-serif; display: flex; flex-direction: column; position: relative; overflow: hidden">
+
+  <header style="display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 12px; border-bottom: 1px solid #1A212A; background: #0A0D11">
+    <div style="display: flex; align-items: center; gap: 10px">
+      <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="#0F1C2B" stroke="#24405F"></circle><path d="M16 4v24M4 16h24" stroke="#24405F" stroke-width="1"></path><circle cx="16" cy="16" r="6" fill="none" stroke="#5AAEFF" stroke-width="2"></circle><circle cx="16" cy="16" r="2" fill="#5AAEFF"></circle></svg>
+      <span style="font-size: 16px; font-weight: 700; color: #F5F7FA">War Room</span>
+    </div>
+    <button type="button" aria-label="Share brief" style="height: 44px; width: 44px; border-radius: 12px; border: 1px solid #252F3B; background: #0F141A; color: #AEB8C5; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5"></path><path d="M5 14v6h14v-6"></path></svg></button>
+  </header>
+
+  <nav aria-label="Respond tools" style="padding: 12px 16px; border-bottom: 1px solid #1A212A">
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 4px; border-radius: 12px; background: #0E1319; border: 1px solid #1E2731">
+      <a href="#" aria-current="page" style="min-height: 40px; border-radius: 9px; background: #1A2330; color: #F5F7FA; font-weight: 600; font-size: 13px; display: flex; align-items: center; justify-content: center; text-decoration: none">War Room</a>
+      <a href="M-Reroute.dc.html" style="min-height: 40px; border-radius: 9px; background: transparent; color: #AEB8C5; font-size: 13px; display: flex; align-items: center; justify-content: center; text-decoration: none">Reroute</a>
+      <a href="M-SPR.dc.html" style="min-height: 40px; border-radius: 9px; background: transparent; color: #AEB8C5; font-size: 13px; display: flex; align-items: center; justify-content: center; text-decoration: none">SPR</a>
+    </div>
+  </nav>
+
+  <div style="flex: 1; padding: 16px; display: flex; flex-direction: column; gap: 16px">
+
+    <!-- Scenario carousel -->
+    <section aria-label="Crisis scenario" style="display: flex; gap: 10px; overflow-x: auto; margin-right: -16px; padding-right: 16px">
+      <button type="button" aria-pressed="true" style="flex: none; width: 200px; text-align: left; padding: 14px; border-radius: 14px; border: 1px solid #FF8A3D; background: #1A1410; color: inherit; font-family: Archivo, sans-serif; display: flex; flex-direction: column; gap: 6px">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.1em; color: #FF8A3D">A · LIVE 0.66</span>
+        <span style="font-size: 15px; font-weight: 700; color: #F5F7FA">Hormuz mine closure</span>
+        <span style="font-size: 12px; color: #AEB8C5">21.0 mbpd</span></button>
+      <button type="button" aria-pressed="false" style="flex: none; width: 200px; text-align: left; padding: 14px; border-radius: 14px; border: 1px solid #1E2731; background: #0E1319; color: inherit; font-family: Archivo, sans-serif; display: flex; flex-direction: column; gap: 6px">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.1em; color: #94A0AF">B · LIVE 0.05</span>
+        <span style="font-size: 15px; font-weight: 700; color: #F5F7FA">Suez drone strikes</span>
+        <span style="font-size: 12px; color: #AEB8C5">9.5 mbpd</span></button>
+      <button type="button" aria-pressed="false" style="flex: none; width: 200px; text-align: left; padding: 14px; border-radius: 14px; border: 1px solid #1E2731; background: #0E1319; color: inherit; font-family: Archivo, sans-serif; display: flex; flex-direction: column; gap: 6px">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.1em; color: #94A0AF">C · LIVE 0.14</span>
+        <span style="font-size: 15px; font-weight: 700; color: #F5F7FA">Black Sea blockade</span>
+        <span style="font-size: 12px; color: #AEB8C5">2.9 mbpd</span></button>
+    </section>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px">
+      <span style="padding: 6px 10px; border-radius: 14px; background: #0E1319; border: 1px solid #1E2731; color: #AEB8C5">Jamnagar</span>
+      <span style="padding: 6px 10px; border-radius: 14px; background: #0E1319; border: 1px solid #1E2731; color: #AEB8C5">Cost</span>
+      <span style="padding: 6px 10px; border-radius: 14px; background: #0E1319; border: 1px solid #1E2731; color: #AEB8C5">30 d</span>
+      <span style="padding: 6px 10px; border-radius: 14px; background: #0E1319; border: 1px solid #1E2731; color: #AEB8C5">3 levers</span>
+      <a href="#" style="padding: 6px 4px; font-weight: 600; text-decoration: none">Edit</a>
+    </div>
+
+    <button type="button" style="height: 52px; border-radius: 12px; border: 0; background: #FF5A5F; color: #1C0F11; font-family: Archivo, sans-serif; font-size: 15px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5l12 7-12 7z"></path></svg>Simulate</button>
+
+    <!-- Headline numbers -->
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+      <div style="background: #1C0F11; border: 1px solid #44201F; border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 4px"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #FF8A8D">RESERVE · NONE</span><span style="font-size: 26px; font-weight: 700; color: #F5F7FA">18.1 d</span></div>
+      <div style="background: #0D1A14; border: 1px solid #1E4A36; border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 4px"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #3FCF8E">RESERVE · PLAN</span><span style="font-size: 26px; font-weight: 700; color: #F5F7FA">103.2 d</span></div>
+    </div>
+
+    <!-- Brief -->
+    <article style="background: #0E1319; border: 1px solid #1E2731; border-radius: 18px; padding: 18px; display: flex; flex-direction: column; gap: 14px">
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px">
+        <h2 style="margin: 0; font-size: 17px; font-weight: 700; color: #F5F7FA">Brief</h2>
+        <span style="display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 12px; background: #121A24; border: 1px solid #24405F; font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #9CCEFF"><span style="width: 6px; height: 6px; border-radius: 3px; background: #5AAEFF"></span>AI narrative pending</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 6px">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #FF8A8D">SITUATION</span>
+        <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #E6EAEF">Closing Hormuz removes 2.16 mbpd — 40% of India’s imports. The reserve empties in 18.1 days, 11.9 days before replacement cargoes land.</p>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 6px">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #3FCF8E">ACTIONS</span>
+        <ol style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; line-height: 1.55; color: #E6EAEF">
+          <li>Contract Bonny Light (Nigeria) at $107.49 landed, 25.6 days.</li>
+          <li>Enable 3 demand levers — saves 1.78 mbpd.</li>
+          <li>Reserve then lasts 103 days, never below 71%.</li>
+        </ol>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 6px">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #F2C14E">WATCH</span>
+        <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #E6EAEF">Resilience 12/100. Urals route risk 0.64.</p>
+      </div>
+    </article>
+
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+      <button type="button" style="min-height: 48px; border-radius: 12px; border: 1px solid #252F3B; background: #0F141A; color: #F5F7FA; font-family: Archivo, sans-serif; font-size: 14px">Export PDF</button>
+      <button type="button" style="min-height: 48px; border-radius: 12px; border: 1px solid #252F3B; background: #0F141A; color: #F5F7FA; font-family: Archivo, sans-serif; font-size: 14px">Copy link</button>
+    </div>
+  </div>
+
+  <nav aria-label="Main" style="position: sticky; bottom: 0; z-index: 3; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-top: 1px solid #1A212A; background: #0A0D11; padding: 6px 4px 18px">
+    <a href="Mobile-Home.dc.html" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; color: #94A0AF; text-decoration: none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 18a8 8 0 1 1 16 0"></path><path d="M12 18l4-6"></path></svg>Overview</a>
+    <a href="Mobile-Map.dc.html" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; color: #94A0AF; text-decoration: none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"></path></svg>Map</a>
+    <a href="M-Risk.dc.html" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; color: #94A0AF; text-decoration: none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3l9 4v5c0 5-4 8-9 9-5-1-9-4-9-9V7z"></path></svg>Risk</a>
+    <a href="M-Market.dc.html" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; color: #94A0AF; text-decoration: none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 17l5-6 4 4 8-9"></path></svg>Markets</a>
+    <a href="#" aria-current="page" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; color: #5AAEFF; text-decoration: none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><circle cx="12" cy="12" r="3"></circle></svg>Respond</a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1500}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Reroute Matrix mobile</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..800&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#5AAEFF}a:hover{color:#9CCEFF}
+</style>
+</helmet>
+<div style="width: 390px; height: 1400px; box-sizing: border-box; background: #07090C; color: #E6EAEF; font-family: Archivo, system-ui, sans-serif; display: flex; flex-direction: column; position: relative; overflow: hidden">
+
+  <header style="display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 12px; border-bottom: 1px solid #1A212A; background: #0A0D11">
+    <div style="display: flex; align-items: center; gap: 10px">
+      <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="#0F1C2B" stroke="#24405F"></circle><path d="M16 4v24M4 16h24" stroke="#24405F" stroke-width="1"></path><circle cx="16" cy="16" r="6" fill="none" stroke="#5AAEFF" stroke-width="2"></circle><circle cx="16" cy="16" r="2" fill="#5AAEFF"></circle></svg>
+      <span style="font-size: 16px; font-weight: 700; color: #F5F7FA">Reroute</span>
+    </div>
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #94A0AF">Brent $106.59</span>
+  </header>
+
+  <nav aria-label="Respond tools" style="padding: 12px 16px; border-bottom: 1px solid #1A212A">
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 4px; border-radius: 12px; background: #0E1319; border: 1px solid #1E2731">
+      <a href="M-War.dc.html" style="min-height: 40px; border-radius: 9px; background: transparent; color: #AEB8C5; font-size: 13px; display: flex; align-items: center; justify-content: center; text-decoration: none">War Room</a>
+      <a href="#" aria-current="page" style="min-height: 40px; border-radius: 9px; background: #1A2330; color: #F5F7FA; font-weight: 600; font-size: 13px; display: flex; align-items: center; justify-content: center; text-decoration: none">Reroute</a>
+      <a href="M-SPR.dc.html" style="min-height: 40px; border-radius: 9px; background: transparent; color: #AEB8C5; font-size: 13px; display: flex; align-items: center; justify-content: center; text-decoration: none">SPR</a>
+    </div>
+  </nav>
+
+  <div style="flex: 1; padding: 16px; display: flex; flex-direction: column; gap: 16px">
+
+    <!-- Compact form: two rows of tappable fields -->
+    <form style="background: #0E1319; border: 1px solid #1E2731; border-radius: 18px; padding: 14px; display: flex; flex-direction: column; gap: 10px">
+      <label style="display: flex; flex-direction: column; gap: 6px"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #94A0AF">BLOCKED</span>
+        <select style="height: 48px; border-radius: 10px; border: 1px solid #FF8A3D; background: #1A1410; color: #F5F7FA; padding: 0 12px; font-family: Archivo, sans-serif; font-size: 15px"><option>Strait of Hormuz</option></select></label>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+        <label style="display: flex; flex-direction: column; gap: 6px"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #94A0AF">REFINERY</span>
+          <select style="height: 48px; border-radius: 10px; border: 1px solid #252F3B; background: #0A0E13; color: #F5F7FA; padding: 0 10px; font-family: Archivo, sans-serif; font-size: 14px"><option>Jamnagar</option></select></label>
+        <label style="display: flex; flex-direction: column; gap: 6px"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #94A0AF">GRADE</span>
+          <select style="height: 48px; border-radius: 10px; border: 1px solid #252F3B; background: #0A0E13; color: #F5F7FA; padding: 0 10px; font-family: Archivo, sans-serif; font-size: 14px"><option>Any</option></select></label>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-items: end">
+        <div role="group" aria-label="Optimise for" style="display: flex; height: 48px; border: 1px solid #252F3B; border-radius: 10px; overflow: hidden">
+          <button type="button" aria-pressed="true" style="flex: 1; border: 0; background: #111A24; color: #F5F7FA; font-family: Archivo, sans-serif; font-size: 14px; font-weight: 600">Cost</button>
+          <button type="button" aria-pressed="false" style="flex: 1; border: 0; border-left: 1px solid #252F3B; background: transparent; color: #AEB8C5; font-family: Archivo, sans-serif; font-size: 14px">Time</button>
+        </div>
+        <button type="button" style="height: 48px; border-radius: 10px; border: 1px solid #252F3B; background: #0A0E13; color: #AEB8C5; font-family: Archivo, sans-serif; font-size: 13px; text-align: left; padding: 0 12px">More · 45 d, 2 excluded</button>
+      </div>
+      <button type="submit" style="height: 50px; border-radius: 12px; border: 0; background: #5AAEFF; color: #06121F; font-family: Archivo, sans-serif; font-size: 15px; font-weight: 700">Generate</button>
+    </form>
+
+    <!-- Recommended -->
+    <section style="background: #0D1A14; border: 1px solid #1E4A36; border-radius: 18px; padding: 16px; display: flex; flex-direction: column; gap: 10px">
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #3FCF8E">RECOMMENDED</span>
+      <span style="font-size: 20px; font-weight: 700; color: #F5F7FA">Bonny Light · Nigeria</span>
+      <span style="font-size: 30px; font-weight: 700; font-stretch: 108%; color: #F5F7FA">$107.49<span style="font-size: 12px; font-weight: 400; color: #94A0AF"> /bbl landed</span></span>
+      <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+        <div style="padding: 10px; border-radius: 10px; background: #0A1410; display: flex; flex-direction: column; gap: 3px"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #94A0AF">LEAD</span><span style="font-size: 15px; font-weight: 600; color: #F5F7FA">25.6 d</span></div>
+        <div style="padding: 10px; border-radius: 10px; background: #0A1410; display: flex; flex-direction: column; gap: 3px"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #94A0AF">FREIGHT</span><span style="font-size: 15px; font-weight: 600; color: #F5F7FA">+$0.90</span></div>
+        <div style="padding: 10px; border-radius: 10px; background: #0A1410; display: flex; flex-direction: column; gap: 3px"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #94A0AF">RISK</span><span style="font-size: 15px; font-weight: 600; color: #F5F7FA">0.18</span></div>
+      </div>
+    </section>
+
+    <div style="display: flex; gap: 12px; align-items: center; padding: 14px; border-radius: 14px; background: #0E1319; border: 1px solid #1E2731">
+      <span style="font-size: 28px; font-weight: 700; color: #FF8A8D">12</span>
+      <span style="flex: 1; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 13px; font-weight: 600; color: #F5F7FA">Supply resilience / 100</span><span style="font-size: 12px; color: #AEB8C5">Few routes clear the risk filter</span></span>
+    </div>
+
+    <!-- Options as cards -->
+    <section aria-labelledby="mrr-h" style="display: flex; flex-direction: column; gap: 10px">
+      <h2 id="mrr-h" style="margin: 0; font-size: 15px; font-weight: 700; color: #F5F7FA">All options · 5</h2>
+      <a href="#" style="display: grid; grid-template-columns: 28px 1fr auto; gap: 10px; align-items: center; min-height: 64px; padding: 10px 14px; border-radius: 14px; background: #0E1319; border: 1px solid #1E2731; text-decoration: none; color: inherit">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #7A8697">02</span>
+        <span style="display: flex; flex-direction: column; gap: 3px"><span style="font-size: 14px; color: #F5F7FA">Escravos · Nigeria</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #94A0AF">25.6 d · risk .18</span></span>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 14px; color: #F5F7FA">$107.49</span></a>
+      <a href="#" style="display: grid; grid-template-columns: 28px 1fr auto; gap: 10px; align-items: center; min-height: 64px; padding: 10px 14px; border-radius: 14px; background: #0E1319; border: 1px solid #1E2731; text-decoration: none; color: inherit">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #7A8697">03</span>
+        <span style="display: flex; flex-direction: column; gap: 3px"><span style="font-size: 14px; color: #F5F7FA">Brent · United Kingdom</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #94A0AF">25.6 d · risk .05</span></span>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 14px; color: #F5F7FA">$107.49</span></a>
+      <a href="#" style="display: grid; grid-template-columns: 28px 1fr auto; gap: 10px; align-items: center; min-height: 64px; padding: 10px 14px; border-radius: 14px; background: #0E1319; border: 1px solid #1E2731; text-decoration: none; color: inherit">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #7A8697">04</span>
+        <span style="display: flex; flex-direction: column; gap: 3px"><span style="font-size: 14px; color: #F5F7FA">WTI · USA</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #94A0AF">25.6 d · risk .05</span></span>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 14px; color: #F5F7FA">$107.49</span></a>
+      <a href="#" style="display: grid; grid-template-columns: 28px 1fr auto; gap: 10px; align-items: center; min-height: 64px; padding: 10px 14px; border-radius: 14px; background: #0E1319; border: 1px solid #3A2414; text-decoration: none; color: inherit">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #7A8697">05</span>
+        <span style="display: flex; flex-direction: column; gap: 3px"><span style="font-size: 14px; color: #F5F7FA">Urals · Russia</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #FF8A3D">25.6 d · risk .64</span></span>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 14px; color: #F5F7FA">$107.49</span></a>
+    </section>
+  </div>
+
+  <nav aria-label="Main" style="position: sticky; bottom: 0; z-index: 3; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-top: 1px solid #1A212A; background: #0A0D11; padding: 6px 4px 18px">
+    <a href="Mobile-Home.dc.html" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; color: #94A0AF; text-decoration: none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 18a8 8 0 1 1 16 0"></path><path d="M12 18l4-6"></path></svg>Overview</a>
+    <a href="Mobile-Map.dc.html" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; color: #94A0AF; text-decoration: none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"></path></svg>Map</a>
+    <a href="M-Risk.dc.html" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; color: #94A0AF; text-decoration: none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3l9 4v5c0 5-4 8-9 9-5-1-9-4-9-9V7z"></path></svg>Risk</a>
+    <a href="M-Market.dc.html" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; color: #94A0AF; text-decoration: none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 17l5-6 4 4 8-9"></path></svg>Markets</a>
+    <a href="#" aria-current="page" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; color: #5AAEFF; text-decoration: none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><circle cx="12" cy="12" r="3"></circle></svg>Respond</a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1400}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

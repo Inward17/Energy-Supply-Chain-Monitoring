@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Threat Map</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..800&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0;background:#07090C}
+a{color:#5AAEFF}a:hover{color:#9CCEFF}
+</style>
+</helmet>
+<div style="min-height: 1000px; background: #07090C; color: #E6EAEF; font-family: Archivo, system-ui, sans-serif; display: flex; flex-wrap: wrap; align-items: stretch">
+
+  <nav aria-label="Primary" style="flex: 1 1 232px; max-width: 256px; min-width: 220px; box-sizing: border-box; border-right: 1px solid #1A212A; background: #0A0D11; padding: 22px 14px; display: flex; flex-direction: column; gap: 22px">
+    <div style="display: flex; align-items: center; gap: 10px; padding: 0 6px">
+      <svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="#0F1C2B" stroke="#24405F"></circle><path d="M16 4v24M4 16h24" stroke="#24405F" stroke-width="1"></path><circle cx="16" cy="16" r="6" fill="none" stroke="#5AAEFF" stroke-width="2"></circle><circle cx="16" cy="16" r="2" fill="#5AAEFF"></circle></svg>
+      <span style="font-size: 15px; font-weight: 800; letter-spacing: 0.16em; font-stretch: 125%; color: #F5F7FA">MERIDIAN</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 2px; font-size: 13px">
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #7A8697; padding: 0 10px 8px">MONITOR</span>
+      <a href="#" style="padding: 10px; border-radius: 8px; color: #AEB8C5; text-decoration: none">Overview</a>
+      <a href="#" aria-current="page" style="padding: 10px; border-radius: 8px; background: #111A24; box-shadow: inset 2px 0 0 #5AAEFF; color: #F5F7FA; font-weight: 600; text-decoration: none">Threat Map</a>
+      <a href="#" style="padding: 10px; border-radius: 8px; color: #AEB8C5; text-decoration: none">Risk Intelligence</a>
+      <a href="#" style="padding: 10px; border-radius: 8px; color: #AEB8C5; text-decoration: none">Market Pulse</a>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #7A8697; padding: 16px 10px 8px">RESPOND</span>
+      <a href="#" style="padding: 10px; border-radius: 8px; color: #AEB8C5; text-decoration: none">Reroute Matrix</a>
+      <a href="#" style="padding: 10px; border-radius: 8px; color: #AEB8C5; text-decoration: none">SPR Optimizer</a>
+      <a href="#" style="padding: 10px; border-radius: 8px; color: #AEB8C5; text-decoration: none">War Room</a>
+      <a href="#" style="padding: 10px; border-radius: 8px; color: #AEB8C5; text-decoration: none">Historical Validation</a>
+    </div>
+  </nav>
+
+  <main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+    <header style="display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; padding: 18px 32px; border-bottom: 1px solid #1A212A; background: #090C10">
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <h1 style="margin: 0; font-size: 22px; font-weight: 700; font-stretch: 112%; color: #F5F7FA">Threat Map</h1>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #94A0AF">8 chokepoints · 0 vessels (AIS offline since 3 Oct)</span>
+      </div>
+      <div role="group" aria-label="Map layers" style="display: flex; flex-wrap: wrap; gap: 8px">
+        <button type="button" aria-pressed="true" style="height: 36px; padding: 0 14px; border-radius: 18px; border: 1px solid #2B4A6B; background: #0F1C2B; color: #F5F7FA; font-family: Archivo, sans-serif; font-size: 12px; font-weight: 600; cursor: pointer">Risk halos</button>
+        <button type="button" aria-pressed="true" style="height: 36px; padding: 0 14px; border-radius: 18px; border: 1px solid #2B4A6B; background: #0F1C2B; color: #F5F7FA; font-family: Archivo, sans-serif; font-size: 12px; font-weight: 600; cursor: pointer">Chokepoints</button>
+        <button type="button" aria-pressed="false" disabled="disabled" style="height: 36px; padding: 0 14px; border-radius: 18px; border: 1px dashed #4A2224; background: transparent; color: #7A8697; font-family: Archivo, sans-serif; font-size: 12px; cursor: not-allowed">Vessels · offline</button>
+        <button type="button" aria-pressed="false" style="height: 36px; padding: 0 14px; border-radius: 18px; border: 1px solid #252F3B; background: #0F141A; color: #AEB8C5; font-family: Archivo, sans-serif; font-size: 12px; cursor: pointer">Producers</button>
+      </div>
+    </header>
+
+    <div style="flex: 1; display: flex; flex-wrap: wrap; gap: 20px; padding: 24px 32px 40px">
+      <!-- Map -->
+      <div role="img" aria-label="Map of Middle East and Indian Ocean with risk halos. Strait of Hormuz elevated at 0.66; Bab-el-Mandeb and Suez low." style="flex: 3 1 560px; min-width: 0; min-height: 720px; position: relative; overflow: hidden; border-radius: 18px; border: 1px solid #1E2731; background: radial-gradient(ellipse at 60% 40%, #111922 0%, #0A0E13 70%)">
+        <div style="position: absolute; inset: 0; background-image: linear-gradient(#131A22 1px, transparent 1px), linear-gradient(90deg, #131A22 1px, transparent 1px); background-size: 64px 64px"></div>
+        <div style="position: absolute; left: 4%; top: 22%; width: 34%; height: 46%; border-radius: 46% 54% 40% 60%; background: #151E28"></div>
+        <div style="position: absolute; left: 34%; top: 14%; width: 40%; height: 34%; border-radius: 58% 42% 50% 50%; background: #151E28"></div>
+        <div style="position: absolute; left: 62%; top: 40%; width: 30%; height: 30%; border-radius: 40% 60% 55% 45%; background: #151E28"></div>
+        <div style="position: absolute; left: 12%; top: 64%; width: 26%; height: 28%; border-radius: 40% 60% 55% 45%; background: #151E28"></div>
+        <!-- Hormuz -->
+        <div style="position: absolute; left: calc(56% - 90px); top: calc(44% - 90px); width: 180px; height: 180px; border-radius: 90px; background: rgba(255,138,61,0.14); border: 1px solid rgba(255,138,61,0.5)"></div>
+        <div style="position: absolute; left: calc(56% - 10px); top: calc(44% - 10px); width: 20px; height: 20px; border-radius: 10px; background: #FF8A3D; box-shadow: 0 0 0 4px #0A0E13, 0 0 0 6px #FF8A3D"></div>
+        <div style="position: absolute; left: calc(56% + 22px); top: calc(44% - 14px); padding: 6px 10px; border-radius: 8px; background: rgba(16,22,29,0.94); border: 1px solid #3A2414; font-size: 12px; font-weight: 600; color: #F5F7FA">Hormuz <span style="font-family: 'IBM Plex Mono', monospace; color: #FF8A3D">0.66</span></div>
+        <!-- Bab -->
+        <div style="position: absolute; left: calc(41% - 26px); top: calc(66% - 26px); width: 52px; height: 52px; border-radius: 26px; background: rgba(63,207,142,0.12); border: 1px solid rgba(63,207,142,0.45)"></div>
+        <div style="position: absolute; left: calc(41% - 7px); top: calc(66% - 7px); width: 14px; height: 14px; border-radius: 7px; background: #3FCF8E"></div>
+        <div style="position: absolute; left: calc(41% + 14px); top: calc(66% - 10px); font-size: 11px; color: #AEB8C5">Bab-el-Mandeb <span style="font-family: 'IBM Plex Mono', monospace">0.14</span></div>
+        <!-- Suez -->
+        <div style="position: absolute; left: calc(33% - 7px); top: calc(36% - 7px); width: 14px; height: 14px; border-radius: 7px; background: #3FCF8E"></div>
+        <div style="position: absolute; left: calc(33% + 14px); top: calc(36% - 10px); font-size: 11px; color: #AEB8C5">Suez <span style="font-family: 'IBM Plex Mono', monospace">0.05</span></div>
+        <!-- Malacca -->
+        <div style="position: absolute; left: calc(88% - 7px); top: calc(78% - 7px); width: 14px; height: 14px; border-radius: 7px; background: #3FCF8E"></div>
+        <div style="position: absolute; left: calc(88% - 60px); top: calc(78% + 12px); font-size: 11px; color: #AEB8C5">Malacca <span style="font-family: 'IBM Plex Mono', monospace">0.05</span></div>
+
+        <!-- Offline notice on the map itself -->
+        <div role="status" style="position: absolute; left: 16px; top: 16px; display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-radius: 12px; background: rgba(28,15,17,0.94); border: 1px solid #44201F; font-size: 12px; color: #E6EAEF">
+          <span style="width: 8px; height: 8px; border-radius: 4px; background: #FF5A5F"></span>Vessel layer unavailable — AIS last fix 3 Oct, 05:44 UTC</div>
+        <!-- zoom -->
+        <div style="position: absolute; right: 16px; top: 16px; display: flex; flex-direction: column; border-radius: 10px; overflow: hidden; border: 1px solid #252F3B">
+          <button type="button" aria-label="Zoom in" style="width: 44px; height: 44px; border: 0; border-bottom: 1px solid #252F3B; background: rgba(16,22,29,0.94); color: #E6EAEF; font-size: 18px; cursor: pointer">+</button>
+          <button type="button" aria-label="Zoom out" style="width: 44px; height: 44px; border: 0; background: rgba(16,22,29,0.94); color: #E6EAEF; font-size: 18px; cursor: pointer">−</button>
+        </div>
+        <!-- legend -->
+        <div style="position: absolute; left: 16px; bottom: 16px; display: flex; gap: 14px; padding: 10px 14px; border-radius: 12px; background: rgba(16,22,29,0.94); border: 1px solid #252F3B; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #AEB8C5">
+          <span style="display: flex; gap: 6px; align-items: center"><span style="width: 8px; height: 8px; border-radius: 4px; background: #3FCF8E"></span>&lt; 0.40</span>
+          <span style="display: flex; gap: 6px; align-items: center"><span style="width: 8px; height: 8px; border-radius: 4px; background: #FF8A3D"></span>0.40–0.70</span>
+          <span style="display: flex; gap: 6px; align-items: center"><span style="width: 8px; height: 8px; border-radius: 4px; background: #FF5A5F"></span>&gt; 0.70</span>
+          <span style="color: #7A8697">halo = risk</span>
+        </div>
+        <span style="position: absolute; right: 12px; bottom: 8px; font-size: 9px; color: #7A8697">© OpenStreetMap contributors © CARTO</span>
+      </div>
+
+      <!-- Right rail: selected + list -->
+      <aside style="flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 16px">
+        <section aria-labelledby="sel-h" style="background: #0E1319; border: 1px solid #1E2731; border-radius: 18px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.04); padding: 20px; display: flex; flex-direction: column; gap: 14px">
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #94A0AF">SELECTED</span>
+          <div style="display: flex; gap: 14px; align-items: center">
+            <svg width="64" height="64" viewBox="0 0 72 72" aria-hidden="true"><circle cx="36" cy="36" r="30" fill="none" stroke="#1A2330" stroke-width="7"></circle><circle cx="36" cy="36" r="30" fill="none" stroke="#FF8A3D" stroke-width="7" stroke-linecap="round" stroke-dasharray="124.4 188.5" transform="rotate(-90 36 36)"></circle><text x="36" y="41" text-anchor="middle" fill="#F5F7FA" font-family="IBM Plex Mono, monospace" font-size="15" font-weight="600">.66</text></svg>
+            <div style="display: flex; flex-direction: column; gap: 4px">
+              <h2 id="sel-h" style="margin: 0; font-size: 19px; font-weight: 700; color: #F5F7FA">Strait of Hormuz</h2>
+              <span style="font-size: 12px; color: #AEB8C5">21.0 mbpd · +$2.79/bbl</span>
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px">
+            <div style="padding: 10px; border-radius: 10px; background: #0A0E13; display: flex; flex-direction: column; gap: 4px"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #94A0AF">PRODUCERS</span><span style="font-size: 15px; font-weight: 600; color: #F5F7FA">6 exposed</span></div>
+            <div style="padding: 10px; border-radius: 10px; background: repeating-linear-gradient(135deg, #0A0E13 0 8px, #0D1218 8px 16px); display: flex; flex-direction: column; gap: 4px"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #94A0AF">TRANSITS</span><span style="font-size: 15px; font-weight: 600; color: #7A8697">no AIS</span></div>
+          </div>
+          <div style="padding: 12px; border-radius: 10px; background: #0A0E13; border: 1px solid #1E2731; display: flex; flex-direction: column; gap: 4px">
+            <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.1em; color: #FF8A8D">SETS SCORE · 0.84 · 11 OCT</span>
+            <span style="font-size: 13px; line-height: 1.45; color: #E6EAEF">IRGC reports a commercial supertanker exploded in the strait.</span>
+          </div>
+          <a href="#" style="min-height: 44px; border-radius: 10px; background: #5AAEFF; color: #06121F; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; text-decoration: none">Why this score →</a>
+        </section>
+        <section aria-label="All chokepoints" style="background: #0E1319; border: 1px solid #1E2731; border-radius: 18px; padding: 8px 18px; display: flex; flex-direction: column">
+          <a href="#" style="display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #1A222C; font-size: 13px; color: #E6EAEF; text-decoration: none"><span>Turkish Straits</span><span style="font-family: 'IBM Plex Mono', monospace; color: #AEB8C5">.14</span></a>
+          <a href="#" style="display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #1A222C; font-size: 13px; color: #E6EAEF; text-decoration: none"><span>Bab-el-Mandeb</span><span style="font-family: 'IBM Plex Mono', monospace; color: #AEB8C5">.14</span></a>
+          <a href="#" style="display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #1A222C; font-size: 13px; color: #E6EAEF; text-decoration: none"><span>Cape of Good Hope</span><span style="font-family: 'IBM Plex Mono', monospace; color: #AEB8C5">.13</span></a>
+          <a href="#" style="display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #1A222C; font-size: 13px; color: #E6EAEF; text-decoration: none"><span>Panama Canal</span><span style="font-family: 'IBM Plex Mono', monospace; color: #AEB8C5">.07</span></a>
+          <a href="#" style="display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #1A222C; font-size: 13px; color: #E6EAEF; text-decoration: none"><span>Suez Canal</span><span style="font-family: 'IBM Plex Mono', monospace; color: #AEB8C5">.05</span></a>
+          <a href="#" style="display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #1A222C; font-size: 13px; color: #E6EAEF; text-decoration: none"><span>Strait of Gibraltar</span><span style="font-family: 'IBM Plex Mono', monospace; color: #AEB8C5">.05</span></a>
+          <a href="#" style="display: flex; justify-content: space-between; padding: 12px 0; font-size: 13px; color: #E6EAEF; text-decoration: none"><span>Strait of Malacca</span><span style="font-family: 'IBM Plex Mono', monospace; color: #AEB8C5">.05</span></a>
+        </section>
+      </aside>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

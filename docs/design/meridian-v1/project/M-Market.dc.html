@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Market Pulse mobile</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..800&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#5AAEFF}a:hover{color:#9CCEFF}
+</style>
+</helmet>
+<div style="width: 390px; height: 1300px; box-sizing: border-box; background: #07090C; color: #E6EAEF; font-family: Archivo, system-ui, sans-serif; display: flex; flex-direction: column; position: relative; overflow: hidden">
+
+  <header style="display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 12px; border-bottom: 1px solid #1A212A; background: #0A0D11">
+    <div style="display: flex; align-items: center; gap: 10px">
+      <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="#0F1C2B" stroke="#24405F"></circle><path d="M16 4v24M4 16h24" stroke="#24405F" stroke-width="1"></path><circle cx="16" cy="16" r="6" fill="none" stroke="#5AAEFF" stroke-width="2"></circle><circle cx="16" cy="16" r="2" fill="#5AAEFF"></circle></svg>
+      <span style="font-size: 16px; font-weight: 700; color: #F5F7FA">Markets</span>
+    </div>
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #94A0AF">close 14 Oct</span>
+  </header>
+
+
+  <div style="flex: 1; padding: 16px; display: flex; flex-direction: column; gap: 16px">
+
+    <!-- Brent hero -->
+    <figure style="margin: 0; background: #0E1319; border: 1px solid #1E2731; border-radius: 20px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.04); padding: 18px; display: flex; flex-direction: column; gap: 10px">
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.14em; color: #94A0AF">BRENT · BZ=F</span>
+      <div style="display: flex; align-items: baseline; gap: 10px">
+        <span style="font-size: 44px; line-height: 0.95; font-weight: 700; font-stretch: 108%; letter-spacing: -0.03em; color: #F5F7FA">$106.59</span>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #FF8A8D">▲ 17.3%</span>
+      </div>
+      <div role="group" aria-label="Range" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 3px; border-radius: 10px; background: #0A0E13; border: 1px solid #1E2731">
+        <button type="button" aria-pressed="false" style="min-height: 36px; border: 0; border-radius: 8px; background: transparent; color: #AEB8C5; font-family: 'IBM Plex Mono', monospace; font-size: 12px">2W</button>
+        <button type="button" aria-pressed="false" style="min-height: 36px; border: 0; border-radius: 8px; background: transparent; color: #AEB8C5; font-family: 'IBM Plex Mono', monospace; font-size: 12px">1M</button>
+        <button type="button" aria-pressed="true" style="min-height: 36px; border: 0; border-radius: 8px; background: #1A2330; color: #F5F7FA; font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600">2M</button>
+      </div>
+      <svg viewBox="0 0 400 120" width="100%" height="170" preserveAspectRatio="none" role="img" aria-label="Brent from $90.87 on 17 August to $106.59 on 14 October, peak $108.75 on 15 September">
+        <path d="M0.0 99.8 L9.8 99.0 L19.5 95.8 L29.3 84.2 L39.0 80.9 L48.8 92.8 L58.5 112.0 L68.3 116.0 L78.0 106.0 L87.8 108.1 L97.6 101.8 L107.3 79.5 L117.1 74.3 L126.8 74.9 L136.6 70.8 L146.3 62.0 L156.1 44.4 L165.9 10.0 L175.6 26.2 L185.4 20.4 L195.1 4.0 L204.9 19.6 L214.6 25.1 L224.4 30.1 L234.1 49.0 L243.9 54.9 L253.7 34.4 L263.4 15.5 L273.2 27.7 L282.9 22.6 L292.7 37.0 L302.4 32.0 L312.2 38.5 L322.0 38.8 L331.7 49.2 L341.5 47.8 L351.2 49.8 L361.0 27.9 L370.7 25.6 L380.5 15.2 L390.2 20.4 L400.0 15.6 L400 120 L0 120 Z" fill="#5AAEFF" fill-opacity="0.10"></path>
+        <path d="M0.0 99.8 L9.8 99.0 L19.5 95.8 L29.3 84.2 L39.0 80.9 L48.8 92.8 L58.5 112.0 L68.3 116.0 L78.0 106.0 L87.8 108.1 L97.6 101.8 L107.3 79.5 L117.1 74.3 L126.8 74.9 L136.6 70.8 L146.3 62.0 L156.1 44.4 L165.9 10.0 L175.6 26.2 L185.4 20.4 L195.1 4.0 L204.9 19.6 L214.6 25.1 L224.4 30.1 L234.1 49.0 L243.9 54.9 L253.7 34.4 L263.4 15.5 L273.2 27.7 L282.9 22.6 L292.7 37.0 L302.4 32.0 L312.2 38.5 L322.0 38.8 L331.7 49.2 L341.5 47.8 L351.2 49.8 L361.0 27.9 L370.7 25.6 L380.5 15.2 L390.2 20.4 L400.0 15.6" fill="none" stroke="#5AAEFF" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"></path>
+      </svg>
+      <div style="display: flex; justify-content: space-between; font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #7A8697"><span>17 Aug</span><span>14 Oct</span></div>
+    </figure>
+
+    <!-- Deviation -->
+    <section style="background: #0E1319; border: 1px solid #1E2731; border-radius: 18px; padding: 16px; display: flex; flex-direction: column; gap: 12px">
+      <div style="display: flex; justify-content: space-between; align-items: baseline"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.14em; color: #94A0AF">VS 30-DAY TREND</span><span style="font-size: 26px; font-weight: 700; color: #F5F7FA">+1.05σ</span></div>
+      <div style="position: relative; height: 34px">
+        <div style="position: absolute; left: 0; right: 0; top: 14px; height: 4px; border-radius: 2px; background: #1A2330"></div>
+        <div style="position: absolute; left: 50%; width: 13%; top: 14px; height: 4px; background: #F2C14E"></div>
+        <div style="position: absolute; left: calc(63% - 7px); top: 9px; width: 14px; height: 14px; border-radius: 7px; background: #F5F7FA; box-shadow: 0 0 0 3px #0E1319"></div>
+        <span style="position: absolute; left: 50%; top: 22px; transform: translateX(-50%); font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #7A8697">mean $102.88</span>
+      </div>
+      <span style="font-size: 12px; color: #94A0AF">σ $3.53 · adds 6.2 of 10 pts to the SDI</span>
+    </section>
+
+    <!-- Instrument rows -->
+    <section aria-label="Benchmarks" style="background: #0E1319; border: 1px solid #1E2731; border-radius: 18px; padding: 4px 16px; display: flex; flex-direction: column">
+      <a href="#" style="display: grid; grid-template-columns: 1fr 96px 70px; gap: 10px; align-items: center; min-height: 64px; text-decoration: none; color: inherit">
+        <span style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 14px; font-weight: 600; color: #F5F7FA">USO</span><span style="font-size: 11px; color: #94A0AF">US Oil Fund</span></span>
+        <svg viewBox="0 0 400 120" width="96" height="32" preserveAspectRatio="none" aria-hidden="true"><path d="M0.0 103.0 L48.8 97.0 L58.5 116.0 L97.6 92.3 L146.3 53.6 L195.1 4.0 L243.9 59.8 L292.7 62.1 L341.5 57.2 L390.2 31.5 L400.0 26.6" fill="none" stroke="#5AAEFF" stroke-width="2" vector-effect="non-scaling-stroke"></path></svg>
+        <span style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 14px; color: #F5F7FA">$154.64</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #FF8A8D">▲18.7%</span></span></a>
+      <a href="#" style="display: grid; grid-template-columns: 1fr 96px 70px; gap: 10px; align-items: center; min-height: 64px; border-top: 1px solid #1A222C; text-decoration: none; color: inherit">
+        <span style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 14px; font-weight: 600; color: #F5F7FA">NG=F</span><span style="font-size: 11px; color: #94A0AF">Henry Hub gas</span></span>
+        <svg viewBox="0 0 400 120" width="96" height="32" preserveAspectRatio="none" aria-hidden="true"><path d="M0.0 116.0 L48.8 99.5 L97.6 70.1 L146.3 73.8 L195.1 73.8 L243.9 66.4 L263.4 4.0 L292.7 57.2 L341.5 38.9 L390.2 7.7 L400.0 27.9" fill="none" stroke="#C9A8FF" stroke-width="2" vector-effect="non-scaling-stroke"></path></svg>
+        <span style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 14px; color: #F5F7FA">$3.17</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #FF8A8D">▲17.8%</span></span></a>
+      <a href="#" style="display: grid; grid-template-columns: 1fr 96px 70px; gap: 10px; align-items: center; min-height: 64px; border-top: 1px solid #1A222C; text-decoration: none; color: inherit">
+        <span style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 14px; font-weight: 600; color: #F5F7FA">XLE</span><span style="font-size: 11px; color: #94A0AF">Energy sector</span></span>
+        <svg viewBox="0 0 400 120" width="96" height="32" preserveAspectRatio="none" aria-hidden="true"><path d="M0.0 102.8 L48.8 93.0 L58.5 112.5 L107.3 62.3 L195.1 41.0 L243.9 110.8 L302.4 116.0 L351.2 81.5 L390.2 10.1 L400.0 4.0" fill="none" stroke="#FFB86B" stroke-width="2" vector-effect="non-scaling-stroke"></path></svg>
+        <span style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 14px; color: #F5F7FA">$67.53</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #FF8A8D">▲8.6%</span></span></a>
+      <div style="display: grid; grid-template-columns: 1fr 96px 70px; gap: 10px; align-items: center; min-height: 64px; border-top: 1px solid #1A222C">
+        <span style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 14px; font-weight: 600; color: #F5F7FA">BOAT</span><span style="font-size: 11px; color: #94A0AF">Tanker freight</span></span>
+        <span style="height: 6px; border-radius: 3px; background: #1A2330"><span style="display: block; width: 66%; height: 6px; border-radius: 3px; background: #5AAEFF"></span></span>
+        <span style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px"><span style="font-family: 'IBM Plex Mono', monospace; font-size: 14px; color: #F5F7FA">$54.05</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #94A0AF">stress .66</span></span></div>
+    </section>
+  </div>
+
+  <nav aria-label="Main" style="position: sticky; bottom: 0; z-index: 3; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-top: 1px solid #1A212A; background: #0A0D11; padding: 6px 4px 18px">
+    <a href="Mobile-Home.dc.html" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; color: #94A0AF; text-decoration: none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 18a8 8 0 1 1 16 0"></path><path d="M12 18l4-6"></path></svg>Overview</a>
+    <a href="Mobile-Map.dc.html" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; color: #94A0AF; text-decoration: none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"></path></svg>Map</a>
+    <a href="M-Risk.dc.html" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; color: #94A0AF; text-decoration: none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3l9 4v5c0 5-4 8-9 9-5-1-9-4-9-9V7z"></path></svg>Risk</a>
+    <a href="#" aria-current="page" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; color: #5AAEFF; text-decoration: none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 17l5-6 4 4 8-9"></path></svg>Markets</a>
+    <a href="M-War.dc.html" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; color: #94A0AF; text-decoration: none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><circle cx="12" cy="12" r="3"></circle></svg>Respond</a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1300}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

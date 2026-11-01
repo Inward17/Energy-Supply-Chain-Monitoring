@@ -1,0 +1,22 @@
+{
+  "v": 3,
+  "createdOnFiles": {"v": 1, "at": "2026-10-14T18:10:00Z"},
+  "title": "MERIDIAN Design v2",
+  "launch": {"view": "canvas"},
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {"x": 0, "y": 0, "w": 1440, "h": 1600, "title": "Desktop v2 · Overview", "expand": "fill"},
+    "Mobile-Home.dc.html": {"x": 0, "y": 2200, "w": 390, "h": 1400, "title": "Mobile v2 · Overview"},
+    "Mobile-Health.dc.html": {"x": 470, "y": 2200, "w": 390, "h": 844, "title": "Mobile · Data health sheet"},
+    "Mobile-Map.dc.html": {"x": 940, "y": 2200, "w": 390, "h": 844, "title": "Mobile · Threat map + drill-down"},
+    "Mobile-Filters.dc.html": {"x": 1410, "y": 2200, "w": 390, "h": 844, "title": "Mobile · Filters sheet"},
+    "States.dc.html": {"x": 0, "y": 4020, "w": 1440, "h": 980, "title": "Data health · component states"}
+  },
+  "order": ["Main.dc.html", "Mobile-Home.dc.html", "Mobile-Health.dc.html", "Mobile-Map.dc.html", "Mobile-Filters.dc.html", "States.dc.html"],
+  "notes": {
+    "t_desktop": {"x": 0, "y": -300, "text": "v2 — tell the story, show the gaps", "kind": "title1", "maxW": 1440},
+    "t_mobile": {"x": 0, "y": 1900, "text": "Mobile", "kind": "title1", "maxW": 1800},
+    "t_states": {"x": 0, "y": 3720, "text": "Data-health states", "kind": "title1", "maxW": 1440}
+  },
+  "designSystems": []
+}

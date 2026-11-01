@@ -143,6 +143,11 @@ frontend/.env.*.local
 frontend/npm-debug.log*
 frontend/yarn-debug.log*
 frontend/yarn-error.log*
+# Legacy UI kept for comparison (legacy/frontend)
+legacy/frontend/.env.local
+legacy/frontend/.env.*.local
+legacy/frontend/playwright-report/
+legacy/frontend/test-results/
 
 # pnpm lock (large; regenerated on install)
 pnpm-lock.yaml
