@@ -1,7 +1,7 @@
 # Exact pins: every deploy and CI run installs the same versions that the test
 # suite passed against. Dependabot (.github/dependabot.yml) proposes upgrades as
 # PRs, so bumps arrive through CI instead of silently at build time.
-psycopg2-binary==2.9.12
+psycopg2-binary==2.9.13
 SQLAlchemy==2.0.51
 neo4j==6.2.0
 google-genai==2.10.0
