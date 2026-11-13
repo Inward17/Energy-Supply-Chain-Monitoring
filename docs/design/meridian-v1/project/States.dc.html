@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Data health states</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..800&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#5AAEFF}a:hover{color:#9CCEFF}
+</style>
+</helmet>
+<div style="width: 1440px; height: 980px; box-sizing: border-box; background: #07090C; color: #E6EAEF; font-family: Archivo, system-ui, sans-serif; padding: 56px 64px; display: flex; flex-direction: column; gap: 48px">
+
+  <!-- Row 1: status badge -->
+  <section style="display: flex; flex-direction: column; gap: 18px">
+    <h2 style="margin: 0; font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 500; letter-spacing: 0.14em; color: #94A0AF">STATUS BADGE · HEADER</h2>
+    <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px">
+      <div style="display: flex; flex-direction: column; gap: 12px">
+        <span style="align-self: flex-start; height: 40px; padding: 0 14px; border-radius: 20px; border: 1px solid #2A3542; background: #0E1319; color: #94A0AF; display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600"><span style="width: 8px; height: 8px; border-radius: 4px; border: 1.5px solid #7A8697; box-sizing: border-box"></span>Checking…</span>
+        <span style="font-size: 13px; line-height: 1.5; color: #AEB8C5">First request in flight. Neutral, no colour claim.</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 12px">
+        <span style="align-self: flex-start; height: 40px; padding: 0 14px; border-radius: 20px; border: 1px solid #1E4A36; background: #0E2219; color: #3FCF8E; display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600"><span style="width: 8px; height: 8px; border-radius: 4px; background: #3FCF8E; box-shadow: 0 0 0 4px rgba(63,207,142,0.18)"></span>All feeds live</span>
+        <span style="font-size: 13px; line-height: 1.5; color: #AEB8C5">Every feed inside its freshness window. Gentle pulse only here.</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 12px">
+        <span style="align-self: flex-start; height: 40px; padding: 0 14px; border-radius: 20px; border: 1px solid #5A4A1E; background: #241D0C; color: #F2C14E; display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600"><span style="width: 8px; height: 8px; border-radius: 4px; background: #F2C14E"></span>Degraded · 2 feeds</span>
+        <span style="font-size: 13px; line-height: 1.5; color: #AEB8C5">Any feed stale or down. Count tells how bad; click opens the list.</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 12px">
+        <span style="align-self: flex-start; height: 40px; padding: 0 14px; border-radius: 20px; border: 1px solid #5A2427; background: #261013; color: #FF8A8D; display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600"><span style="width: 8px; height: 8px; border-radius: 4px; background: #FF5A5F"></span>Backend offline</span>
+        <span style="font-size: 13px; line-height: 1.5; color: #AEB8C5">Request failed. Page keeps last data, greyed, with its timestamp.</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Row 2: KPI card freshness -->
+  <section style="display: flex; flex-direction: column; gap: 18px">
+    <h2 style="margin: 0; font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 500; letter-spacing: 0.14em; color: #94A0AF">KPI CARD · FRESHNESS</h2>
+    <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px">
+      <div style="background: #0E1319; border: 1px solid #1F2833; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 10px">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #94A0AF">FRESH</span>
+        <span style="font-size: 28px; font-weight: 700; font-stretch: 108%; color: #F5F7FA">$106.59</span>
+        <span style="display: flex; align-items: center; gap: 6px; padding-top: 10px; border-top: 1px solid #1A222C; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #94A0AF"><span style="width: 6px; height: 6px; border-radius: 3px; background: #3FCF8E"></span>close 14 Oct</span>
+      </div>
+      <div style="background: #0E1319; border: 1px solid #1F2833; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 10px">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #94A0AF">STALE</span>
+        <span style="font-size: 28px; font-weight: 700; font-stretch: 108%; color: #C3CBD5">2</span>
+        <span style="display: flex; align-items: center; gap: 6px; padding-top: 10px; border-top: 1px solid #1A222C; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #F2C14E"><span style="width: 6px; height: 6px; border-radius: 3px; background: #F2C14E"></span>newest 3d ago · stale</span>
+      </div>
+      <div style="background: repeating-linear-gradient(135deg, #0E1319 0 10px, #0E141A 10px 20px); border: 1px dashed #4A2224; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 10px">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #94A0AF">UNAVAILABLE</span>
+        <span style="font-size: 28px; font-weight: 700; font-stretch: 108%; color: #7A8697">—</span>
+        <span style="display: flex; align-items: center; gap: 6px; padding-top: 10px; border-top: 1px solid #1A222C; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #FF8A8D"><span style="width: 6px; height: 6px; border-radius: 3px; background: #FF5A5F"></span>last fix 3 Oct · 11d</span>
+      </div>
+      <div style="background: #0E1319; border: 1px solid #1F2833; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 10px">
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #94A0AF">LOADING</span>
+        <div style="height: 30px; width: 60%; border-radius: 6px; background: #1A2330"></div>
+        <div style="height: 12px; width: 40%; margin-top: 10px; border-radius: 4px; background: #161E28"></div>
+      </div>
+    </div>
+    <span style="font-size: 13px; color: #AEB8C5">Rule: the footer always shows <strong style="color: #F5F7FA">data time</strong>, never request time. Thresholds — market: 1 trading day · events: 24 h · AIS: 3 h.</span>
+  </section>
+
+  <!-- Row 3: panel empty/degraded -->
+  <section style="display: flex; flex-direction: column; gap: 18px">
+    <h2 style="margin: 0; font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 500; letter-spacing: 0.14em; color: #94A0AF">PANEL STATES</h2>
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px">
+      <div style="background: #0E1319; border: 1px solid #1F2833; border-radius: 16px; padding: 24px; display: flex; flex-direction: column; gap: 10px; min-height: 180px">
+        <span style="font-size: 15px; font-weight: 700; color: #F5F7FA">Vessels — feed offline</span>
+        <span style="font-size: 13px; line-height: 1.5; color: #AEB8C5">AIS has sent no positions since 3 Oct, 05:44 UTC. Map shows chokepoint risk only.</span>
+        <a href="#" style="margin-top: auto; font-size: 13px; font-weight: 600; text-decoration: none">View data health →</a>
+      </div>
+      <div style="background: #0E1319; border: 1px solid #1F2833; border-radius: 16px; padding: 24px; display: flex; flex-direction: column; gap: 10px; min-height: 180px">
+        <span style="font-size: 15px; font-weight: 700; color: #F5F7FA">No events above 0.45</span>
+        <span style="font-size: 13px; line-height: 1.5; color: #AEB8C5">Quiet is real here: news is current (checked 17:09 UTC). Lower the severity filter to see more.</span>
+        <a href="#" style="margin-top: auto; font-size: 13px; font-weight: 600; text-decoration: none">Show all severities →</a>
+      </div>
+      <div style="background: #0E1319; border: 1px solid #1F2833; border-radius: 16px; padding: 24px; display: flex; flex-direction: column; gap: 10px; min-height: 180px; opacity: 0.6">
+        <span style="font-size: 15px; font-weight: 700; color: #F5F7FA">Showing last known data</span>
+        <span style="font-size: 13px; line-height: 1.5; color: #AEB8C5">Backend unreachable. Values below are from 14 Oct, 17:09 UTC and will refresh when it returns.</span>
+        <button type="button" style="margin-top: auto; align-self: flex-start; min-height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid #2A3542; background: #1A222C; color: #F5F7FA; font-family: Archivo, sans-serif; font-size: 13px; font-weight: 600; cursor: pointer">Retry</button>
+      </div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":980}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

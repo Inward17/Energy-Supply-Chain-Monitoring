@@ -5,6 +5,8 @@ import { Moon, Sun } from "lucide-react"
 import { useTheme } from "@/components/theme-provider"
 import { Sidebar } from "./sidebar"
 import { KpiHeader } from "./kpi-header"
+import { SystemStatusBadge } from "./system-status"
+import type { LiveMetrics } from "@/lib/api"
 import { TabNav, type TabKey } from "./tab-nav"
 import { ThreatMap } from "./tabs/threat-map"
 import { RiskIntelligence } from "./tabs/risk-intelligence"
@@ -34,6 +36,13 @@ export function Dashboard() {
   const refreshTokenRef = useRef(0)
   const pendingRefreshesRef = useRef<Set<"kpi" | "risk">>(new Set())
   const { theme, toggle } = useTheme()
+  // Shared with the KPI header so the status badge reflects real feed health.
+  const [live, setLive] = useState<LiveMetrics | null>(null)
+  const [liveFailed, setLiveFailed] = useState(false)
+  const handleMetrics = useCallback((m: LiveMetrics | null) => {
+    setLiveFailed(m === null)
+    if (m) setLive(m)
+  }, [])
 
   const handleRefresh = useCallback(() => {
     const nextToken = refreshTokenRef.current + 1
@@ -101,13 +110,7 @@ export function Dashboard() {
               </button>
             </div>
 
-            <div className="flex items-center gap-2 rounded-full bg-safe-soft px-3 py-1.5">
-              <span className="relative flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full rounded-full bg-safe [animation:omping_1.6s_ease-out_infinite]" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-safe" />
-              </span>
-              <span className="text-xs font-semibold text-safe">Systems Nominal</span>
-            </div>
+            <SystemStatusBadge live={live} failed={liveFailed} />
           </div>
         </header>
 
@@ -117,6 +120,7 @@ export function Dashboard() {
             autoRefresh={autoRefresh}
             refreshToken={refreshToken}
             onRefreshComplete={handleRefreshComplete}
+            onMetrics={handleMetrics}
           />
           <TabNav active={tab} onChange={setTab} />
 

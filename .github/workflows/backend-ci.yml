@@ -1,0 +1,143 @@
+# Backend CI — pytest for the FastAPI service on every pull request.
+#
+# Database per PR (Neon branching):
+#   When NEON_API_KEY is available, each PR gets its own Neon branch
+#   "ci/pr-<number>": a copy-on-write clone of the production database with
+#   the real schema and data. Tests run against it, never against production.
+#   The branch is reused across pushes to the same PR and deleted by
+#   neon-cleanup.yml when the PR closes (plus a 7-day expiry as a safety net).
+#
+# Fallback: a throwaway Postgres container on the runner. Used when the secret
+#   is absent — forked PRs and Dependabot PRs never receive secrets, and the
+#   repo may not have Neon configured yet — so the check always runs.
+#
+# Every test runs inside a transaction that is rolled back (tests/conftest.py),
+# and init_schema() creates tables idempotently, so an empty database works too.
+name: Backend CI
+
+on:
+  # No path filter on pull_request (see frontend-ci.yml): required checks
+  # must always report. The job skips its work when backend/ is untouched.
+  pull_request:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci.yml"
+
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      # Secrets cannot be read in `if:` expressions directly; expose a flag.
+      HAS_NEON: ${{ secrets.NEON_API_KEY != '' && vars.NEON_PROJECT_ID != '' }}
+      # The knowledge graph is optional in tests: a closed port makes the
+      # driver back off at once and graph-dependent paths fall back.
+      NEO4J_URI: bolt://127.0.0.1:9
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ci
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: energy_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ci -d energy_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect backend changes
+        id: changes
+        working-directory: .
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "backend=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -qE '^(backend/|\.github/workflows/backend-ci\.yml)'; then
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "backend=false" >> "$GITHUB_OUTPUT"
+            echo "No backend changes — skipping." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/setup-python@v5
+        if: steps.changes.outputs.backend == 'true'
+        with:
+          python-version: "3.13" # matches backend/Dockerfile
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        if: steps.changes.outputs.backend == 'true'
+        run: pip install -r requirements.txt
+
+      - name: Branch expiry date
+        if: steps.changes.outputs.backend == 'true' && github.event_name == 'pull_request' && env.HAS_NEON == 'true'
+        run: echo "EXPIRES_AT=$(date -u --date '+7 days' +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_ENV"
+
+      - name: Create Neon branch for this PR
+        id: neon
+        if: steps.changes.outputs.backend == 'true' && github.event_name == 'pull_request' && env.HAS_NEON == 'true'
+        # A Neon outage should not block merging: fall back to the container.
+        continue-on-error: true
+        uses: neondatabase/create-branch-action@v6
+        with:
+          project_id: ${{ vars.NEON_PROJECT_ID }}
+          api_key: ${{ secrets.NEON_API_KEY }}
+          branch_name: ci/pr-${{ github.event.number }}
+          # Defaults to the project's primary branch; set the variable to clone another.
+          parent_branch: ${{ vars.NEON_PARENT_BRANCH }}
+          database: ${{ vars.NEON_DATABASE || 'neondb' }}
+          role: ${{ vars.NEON_ROLE || 'neondb_owner' }}
+          expires_at: ${{ env.EXPIRES_AT }}
+          # Suspend the branch's compute after 5 idle minutes so CI does not
+          # burn the free tier's compute hours between pushes.
+          suspend_timeout: 300
+
+      - name: Choose database
+        if: steps.changes.outputs.backend == 'true'
+        run: |
+          if [ "${{ steps.neon.outcome }}" = "success" ]; then
+            {
+              echo "DB_HOST=${{ steps.neon.outputs.db_host }}"
+              echo "DB_PORT=5432"
+              echo "DB_NAME=${{ vars.NEON_DATABASE || 'neondb' }}"
+              echo "DB_USER=${{ vars.NEON_ROLE || 'neondb_owner' }}"
+              echo "DB_PASSWORD=${{ steps.neon.outputs.password }}"
+              echo "DB_SSLMODE=require"
+            } >> "$GITHUB_ENV"
+            echo "Database: Neon branch \`ci/pr-${{ github.event.number }}\` (${{ steps.neon.outputs.created == 'true' && 'created' || 'reused' }})" >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "DB_HOST=localhost"
+              echo "DB_PORT=5432"
+              echo "DB_NAME=energy_ci"
+              echo "DB_USER=ci"
+              echo "DB_PASSWORD=ci"
+            } >> "$GITHUB_ENV"
+            echo "Database: ephemeral Postgres container (Neon not configured or not available to this PR)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Run tests
+        if: steps.changes.outputs.backend == 'true'
+        run: python -m pytest -q -p no:cacheprovider

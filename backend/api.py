@@ -109,14 +109,22 @@ if not _CORS_ALLOW_CREDENTIALS:
         "origins if the browser needs to send cookies or auth headers."
     )
 
+# Cloudflare Pages gives every pull request its own preview origin
+# (https://<hash>.<project>.pages.dev). Those can't be listed ahead of time, so
+# CORS_ORIGIN_REGEX admits them by pattern, e.g.
+#   ^https://([a-z0-9-]+\.)?energy-supply-chain\.pages\.dev$
+# Anchored and scoped to one project, so it never matches another site.
+CORS_ORIGIN_REGEX = os.getenv("CORS_ORIGIN_REGEX", "").strip() or None
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
+    allow_origin_regex=CORS_ORIGIN_REGEX,
     allow_credentials=_CORS_ALLOW_CREDENTIALS,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
 )
-logger.info("CORS allowed origins: %s", CORS_ORIGINS)
+logger.info("CORS allowed origins: %s (regex: %s)", CORS_ORIGINS, CORS_ORIGIN_REGEX)
 
 #: Returned to clients in place of raw exception text. Internal messages carry
 #: DB schema, file paths and driver internals that aid an attacker; the detail

@@ -1,0 +1,28 @@
+# Deletes the per-PR Neon branch (ci/pr-<number>) created by backend-ci.yml
+# once the PR is merged or closed. Branches also carry a 7-day expiry, so a
+# missed cleanup cannot leak storage or count against the branch limit for long.
+name: Neon branch cleanup
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+
+jobs:
+  delete-branch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      HAS_NEON: ${{ secrets.NEON_API_KEY != '' && vars.NEON_PROJECT_ID != '' }}
+    steps:
+      - name: Delete Neon branch
+        if: env.HAS_NEON == 'true'
+        # A PR that never touched backend/ never got a branch; ignore "not found".
+        continue-on-error: true
+        uses: neondatabase/delete-branch-action@v3
+        with:
+          project_id: ${{ vars.NEON_PROJECT_ID }}
+          api_key: ${{ secrets.NEON_API_KEY }}
+          branch: ci/pr-${{ github.event.number }}

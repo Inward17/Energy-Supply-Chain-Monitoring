@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Historical Validation</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..800&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0;background:#07090C}
+a{color:#5AAEFF}a:hover{color:#9CCEFF}
+</style>
+</helmet>
+<div style="min-height: 1000px; background: #07090C; color: #E6EAEF; font-family: Archivo, system-ui, sans-serif; display: flex; flex-wrap: wrap; align-items: stretch">
+
+  <nav aria-label="Primary" style="flex: 1 1 232px; max-width: 256px; min-width: 220px; box-sizing: border-box; border-right: 1px solid #1A212A; background: #0A0D11; padding: 22px 14px; display: flex; flex-direction: column; gap: 22px">
+    <div style="display: flex; align-items: center; gap: 10px; padding: 0 6px">
+      <svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="#0F1C2B" stroke="#24405F"></circle><path d="M16 4v24M4 16h24" stroke="#24405F" stroke-width="1"></path><circle cx="16" cy="16" r="6" fill="none" stroke="#5AAEFF" stroke-width="2"></circle><circle cx="16" cy="16" r="2" fill="#5AAEFF"></circle></svg>
+      <span style="font-size: 15px; font-weight: 800; letter-spacing: 0.16em; font-stretch: 125%; color: #F5F7FA">MERIDIAN</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 2px; font-size: 13px">
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #7A8697; padding: 0 10px 8px">MONITOR</span>
+      <a href="#" style="padding: 10px; border-radius: 8px; color: #AEB8C5; text-decoration: none">Overview</a>
+      <a href="#" style="padding: 10px; border-radius: 8px; color: #AEB8C5; text-decoration: none">Threat Map</a>
+      <a href="#" style="padding: 10px; border-radius: 8px; color: #AEB8C5; text-decoration: none">Risk Intelligence</a>
+      <a href="#" style="padding: 10px; border-radius: 8px; color: #AEB8C5; text-decoration: none">Market Pulse</a>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #7A8697; padding: 16px 10px 8px">RESPOND</span>
+      <a href="#" style="padding: 10px; border-radius: 8px; color: #AEB8C5; text-decoration: none">Reroute Matrix</a>
+      <a href="#" style="padding: 10px; border-radius: 8px; color: #AEB8C5; text-decoration: none">SPR Optimizer</a>
+      <a href="#" style="padding: 10px; border-radius: 8px; color: #AEB8C5; text-decoration: none">War Room</a>
+      <a href="#" aria-current="page" style="padding: 10px; border-radius: 8px; background: #111A24; box-shadow: inset 2px 0 0 #5AAEFF; color: #F5F7FA; font-weight: 600; text-decoration: none">Historical Validation</a>
+    </div>
+  </nav>
+
+  <main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+    <header style="display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; padding: 18px 32px; border-bottom: 1px solid #1A212A; background: #090C10">
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <h1 style="margin: 0; font-size: 22px; font-weight: 700; font-stretch: 112%; color: #F5F7FA">Historical Validation</h1>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #94A0AF">Would the SDI have warned before Brent moved &gt;1.5σ? · 3-signal backtest</span>
+      </div>
+      <button type="button" style="height: 40px; padding: 0 16px; border-radius: 10px; border: 0; background: #5AAEFF; color: #06121F; font-family: Archivo, sans-serif; font-size: 13px; font-weight: 700; cursor: pointer">Run new backtest</button>
+    </header>
+
+    <div style="padding: 24px 32px 40px; display: flex; flex-wrap: wrap; gap: 20px; max-width: 1180px; box-sizing: border-box; width: 100%; align-items: flex-start">
+
+      <!-- Event list -->
+      <aside aria-label="Backtests" style="flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; gap: 10px">
+        <a href="#" aria-current="true" style="padding: 16px; border-radius: 14px; border: 1px solid #2B4A6B; background: #0F1C2B; text-decoration: none; color: inherit; display: flex; flex-direction: column; gap: 6px">
+          <span style="display: flex; justify-content: space-between"><span style="font-size: 14px; font-weight: 700; color: #F5F7FA">Red Sea attacks</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #3FCF8E">31 d early</span></span>
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #94A0AF">Nov 2023 – Jan 2024 · 78 days</span></a>
+        <a href="#" style="padding: 16px; border-radius: 14px; border: 1px solid #1E2731; background: #0E1319; text-decoration: none; color: inherit; display: flex; flex-direction: column; gap: 6px">
+          <span style="display: flex; justify-content: space-between"><span style="font-size: 14px; font-weight: 700; color: #F5F7FA">Israel–Iran war</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #3FCF8E">7 d early</span></span>
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #94A0AF">May – Jun 2025 · 37 days</span></a>
+        <div style="padding: 16px; border-radius: 14px; border: 1px solid #44201F; background: #1C0F11; display: flex; flex-direction: column; gap: 8px">
+          <span style="display: flex; justify-content: space-between"><span style="font-size: 14px; font-weight: 700; color: #F5F7FA">Russia–Ukraine build-up</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #FF8A8D">failed 83%</span></span>
+          <span style="font-size: 12px; line-height: 1.45; color: #AEB8C5">Stopped at 13 Feb 2022: the scorer returned events in a format the backtest didn't expect.</span>
+          <button type="button" style="align-self: flex-start; min-height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid #44201F; background: transparent; color: #FF8A8D; font-family: Archivo, sans-serif; font-size: 12px; font-weight: 600; cursor: pointer">Retry</button>
+        </div>
+      </aside>
+
+      <div style="flex: 3 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 20px">
+        <!-- Verdict -->
+        <section style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px">
+          <div style="background: #0D1A14; border: 1px solid #1E4A36; border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 4px">
+            <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #3FCF8E">LEAD TIME</span>
+            <span style="font-size: 38px; font-weight: 700; font-stretch: 108%; color: #F5F7FA">31 days</span>
+            <span style="font-size: 12px; color: #AEB8C5">before Brent broke out</span>
+          </div>
+          <div style="background: #0E1319; border: 1px solid #1E2731; border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 4px">
+            <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #94A0AF">SDI ALERT ≥ 65</span>
+            <span style="font-size: 22px; font-weight: 700; color: #F5F7FA">19 Nov 2023</span>
+          </div>
+          <div style="background: #0E1319; border: 1px solid #1E2731; border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 4px">
+            <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #94A0AF">MARKET REACTION</span>
+            <span style="font-size: 22px; font-weight: 700; color: #F5F7FA">20 Dec 2023</span>
+          </div>
+        </section>
+
+        <!-- Chart -->
+        <figure style="margin: 0; background: #0E1319; border: 1px solid #1E2731; border-radius: 18px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.04); padding: 22px; display: flex; flex-direction: column; gap: 12px">
+          <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; align-items: baseline">
+            <span style="font-size: 15px; font-weight: 700; color: #F5F7FA">Red Sea attacks · SDI vs Brent</span>
+            <div style="display: flex; gap: 14px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #94A0AF">
+              <span style="display: flex; align-items: center; gap: 6px"><span style="width: 14px; height: 3px; background: #5AAEFF"></span>SDI</span>
+              <span style="display: flex; align-items: center; gap: 6px"><span style="width: 14px; height: 3px; background: #FFB86B"></span>Brent ($73–84)</span>
+            </div>
+          </div>
+          <svg viewBox="0 0 640 220" width="100%" role="img" aria-label="SDI and Brent from 15 November 2023 to 31 January 2024. SDI crossed 65 on 19 November; Brent broke out on 20 December.">
+            <line x1="0" y1="71.2" x2="640" y2="71.2" stroke="#F2C14E" stroke-dasharray="4 4"></line>
+            <text x="636" y="66" text-anchor="end" fill="#F2C14E" font-family="IBM Plex Mono, monospace" font-size="10">alert 65</text>
+            <rect x="33.2" y="0" width="257.7" height="200" fill="#5AAEFF" fill-opacity="0.06"></rect>
+            <line x1="33.2" y1="0" x2="33.2" y2="200" stroke="#5AAEFF"></line>
+            <line x1="290.9" y1="0" x2="290.9" y2="200" stroke="#FFB86B"></line>
+            <text x="38" y="14" fill="#5AAEFF" font-family="IBM Plex Mono, monospace" font-size="10">SDI alert</text>
+            <text x="162" y="30" text-anchor="middle" fill="#9CCEFF" font-family="IBM Plex Mono, monospace" font-size="11">← 31 days →</text>
+            <text x="296" y="14" fill="#FFB86B" font-family="IBM Plex Mono, monospace" font-size="10">Brent &gt;1.5σ</text>
+            <path d="M0.0 56.6 L8.3 115.2 L16.6 65.5 L24.9 65.5 L33.2 65.5 L41.6 38.8 L49.9 36.8 L58.2 44.4 L66.5 53.6 L74.8 65.9 L83.1 65.9 L91.4 65.9 L99.7 75.3 L108.1 48.8 L116.4 26.6 L124.7 30.8 L133.0 92.4 L141.3 92.4 L149.6 92.4 L157.9 105.7 L166.2 118.6 L174.5 163.9 L182.9 167.8 L191.2 139.9 L199.5 139.9 L207.8 139.9 L216.1 136.9 L224.4 180.4 L232.7 164.5 L241.0 127.8 L249.4 128.8 L257.7 128.8 L266.0 128.8 L274.3 106.9 L282.6 87.0 L290.9 79.6 L299.2 84.5 L307.5 89.5 L315.8 89.5 L324.2 89.5 L332.5 89.5 L340.8 58.3 L349.1 80.4 L357.4 100.1 L365.7 121.1 L374.0 121.1 L382.3 121.1 L390.6 121.1 L399.0 139.1 L407.3 102.3 L415.6 112.6 L423.9 94.3 L432.2 94.3 L440.5 94.3 L448.8 135.5 L457.1 112.6 L465.5 124.9 L473.8 115.4 L482.1 101.6 L490.4 101.6 L498.7 101.6 L507.0 101.6 L515.3 101.6 L523.6 108.0 L531.9 89.0 L540.3 97.4 L548.6 97.4 L556.9 97.4 L565.2 74.0 L573.5 82.0 L581.8 74.3 L590.1 37.1 L598.4 19.6 L606.8 19.6 L615.1 19.6 L623.4 37.5 L631.7 30.2 L640.0 48.3" fill="none" stroke="#FFB86B" stroke-width="1.5" opacity="0.8"></path>
+            <path d="M0.0 72.2 L8.3 154.0 L16.6 72.5 L24.9 72.5 L33.2 67.6 L41.6 57.0 L49.9 70.2 L58.2 65.2 L66.5 60.4 L74.8 70.8 L83.1 142.4 L91.4 65.6 L99.7 58.7 L108.1 64.7 L116.4 58.0 L124.7 139.7 L133.0 146.5 L141.3 85.0 L149.6 59.5 L157.9 148.2 L166.2 157.0 L174.5 79.3 L182.9 82.9 L191.2 162.4 L199.5 75.2 L207.8 80.4 L216.1 102.1 L224.4 85.0 L232.7 86.6 L241.0 155.7 L249.4 51.8 L257.7 51.8 L266.0 62.0 L274.3 46.6 L282.6 46.8 L290.9 73.9 L299.2 134.6 L307.5 52.4 L315.8 134.4 L324.2 134.4 L332.5 42.2 L340.8 137.2 L349.1 140.1 L357.4 144.0 L365.7 147.0 L374.0 65.1 L382.3 54.9 L390.6 147.0 L399.0 146.8 L407.3 54.5 L415.6 53.3 L423.9 56.8 L432.2 138.6 L440.5 138.6 L448.8 58.7 L457.1 145.3 L465.5 61.0 L473.8 54.9 L482.1 56.2 L490.4 143.2 L498.7 51.0 L507.0 143.2 L515.3 55.6 L523.6 144.0 L531.9 140.9 L540.3 56.2 L548.6 51.0 L556.9 61.2 L565.2 141.1 L573.5 142.4 L581.8 140.3 L590.1 59.7 L598.4 47.8 L606.8 58.0 L615.1 47.8 L623.4 51.0 L631.7 54.9 L640.0 55.5" fill="none" stroke="#5AAEFF" stroke-width="2" stroke-linejoin="round"></path>
+            <text x="0" y="216" fill="#7A8697" font-family="IBM Plex Mono, monospace" font-size="10">15 Nov</text>
+            <text x="290.9" y="216" text-anchor="middle" fill="#7A8697" font-family="IBM Plex Mono, monospace" font-size="10">20 Dec</text>
+            <text x="640" y="216" text-anchor="end" fill="#7A8697" font-family="IBM Plex Mono, monospace" font-size="10">31 Jan</text>
+          </svg>
+          <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: #17130A; border: 1px solid #3F3417">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F2C14E" stroke-width="2" aria-hidden="true" style="flex: none; margin-top: 2px"><path d="M12 3l10 18H2z"></path><path d="M12 10v5M12 18v.5"></path></svg>
+            <span style="font-size: 12px; line-height: 1.5; color: #E6EAEF">27 of 78 days had no scored headlines, so the SDI drops to ~25 on those days. Those dips are missing news, not calm — read the upper envelope.</span>
+          </div>
+        </figure>
+
+        <!-- Threshold sensitivity -->
+        <section aria-labelledby="th-h" style="background: #0E1319; border: 1px solid #1E2731; border-radius: 18px; padding: 22px; display: flex; flex-direction: column; gap: 12px">
+          <div style="display: flex; justify-content: space-between; align-items: baseline">
+            <h2 id="th-h" style="margin: 0; font-size: 15px; font-weight: 700; color: #F5F7FA">Threshold sensitivity</h2>
+            <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #7A8697">days of warning per alert level</span>
+          </div>
+          <div style="display: grid; grid-template-columns: 56px 1fr 56px; gap: 8px 12px; align-items: center; font-family: 'IBM Plex Mono', monospace; font-size: 12px">
+            <span style="color: #AEB8C5">50</span><div style="height: 14px; border-radius: 3px; background: #1F4A36; width: 100%"></div><span style="text-align: right; color: #F5F7FA">35 d</span>
+            <span style="color: #AEB8C5">55</span><div style="height: 14px; border-radius: 3px; background: #1F4A36; width: 100%"></div><span style="text-align: right; color: #F5F7FA">35 d</span>
+            <span style="color: #AEB8C5">60</span><div style="height: 14px; border-radius: 3px; background: #1F4A36; width: 100%"></div><span style="text-align: right; color: #F5F7FA">35 d</span>
+            <span style="color: #F5F7FA; font-weight: 600">65 ←</span><div style="height: 14px; border-radius: 3px; background: #3FCF8E; width: 88.6%"></div><span style="text-align: right; color: #F5F7FA; font-weight: 600">31 d</span>
+            <span style="color: #AEB8C5">70</span><div style="height: 14px; border-radius: 3px; background: #1F4A36; width: 85.7%"></div><span style="text-align: right; color: #F5F7FA">30 d</span>
+            <span style="color: #AEB8C5">75</span><div style="height: 14px; border-radius: 3px; background: #6B5A24; width: 14.3%"></div><span style="text-align: right; color: #F2C14E">5 d</span>
+            <span style="color: #AEB8C5">80</span><div style="height: 14px; border-radius: 3px; background: repeating-linear-gradient(135deg, #44201F 0 3px, transparent 3px 6px); width: 14.3%"></div><span style="text-align: right; color: #FF8A8D">5 d late</span>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

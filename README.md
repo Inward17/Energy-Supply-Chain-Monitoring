@@ -133,11 +133,14 @@ energy-supply-chain/
 │       ├── ingestion/              # Data trawlers (GDELT, AIS, yfinance)
 │       └── utils/                  # Domain constants and math metrics
 │
-└── frontend/                       # React/Next.js User Interface
-    ├── components/                 # Reusable UI widgets and tabs
-    ├── lib/                        # API fetcher utility (api.ts)
-    ├── app/                        # Next.js pages and routing
-    └── package.json                # Node dependencies
+├── frontend/                       # MERIDIAN UI (Next.js, static export) — dark + light, desktop + mobile
+│   ├── components/m/               # Shell, data layer, charts, detail drawer
+│   ├── components/m/pages/         # Overview, Threat Map, Risk, Market, Reroute, SPR, War Room, History
+│   ├── lib/                        # API fetcher utility (api.ts)
+│   ├── app/                        # Next.js entry, theme tokens (globals.css)
+│   └── package.json                # Node dependencies
+│
+└── legacy/frontend/                # Previous UI, kept for side-by-side comparison (not deployed)
 ```
 
 ---
@@ -687,6 +690,13 @@ npm run dev
 
 Open http://localhost:3000 — the dashboard should show populated charts immediately.
 
+To compare with the previous UI, run it against the same backend on another port:
+
+```bash
+cd legacy/frontend
+npm run dev -- -p 3001
+```
+
 ---
 
 ### Option B — Manual Database Setup (without Docker)
@@ -780,3 +790,9 @@ AIS_SNAPSHOT_SECONDS=600     # How long to collect AIS data per cron cycle.
                              # Must exceed the ~360s AIS Type-5 broadcast
                              # period or most vessels are never type-classified.
 ```
+
+---
+
+## License
+
+Released under the [MIT License](LICENSE).

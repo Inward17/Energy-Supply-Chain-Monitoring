@@ -1,0 +1,228 @@
+@import 'tailwindcss';
+@plugin 'tailwindcss-animate';
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * MERIDIAN design tokens.
+ *
+ * `@theme inline` is required, not stylistic: with a plain `@theme`, Tailwind
+ * emits `--color-panel: var(--t-panel)` into `:root`, so the indirection
+ * resolves in `:root` scope and the `.dark` overrides below would never take
+ * effect. `inline` compiles `bg-panel` straight to `var(--t-panel)`, resolved
+ * at the element, which is what makes runtime theme switching work.
+ *
+ * Chart colours are mirrored in components/energy/chart-theme.ts (Recharts
+ * takes hex props, not classes). Keep the two in sync.
+ */
+@theme inline {
+  --font-sans: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+
+  /* surfaces */
+  --color-bg: var(--t-bg);
+  --color-panel: var(--t-panel);
+  --color-panel-2: var(--t-panel-2);
+  --color-input-bg: var(--t-input-bg);
+  --color-map-bg: var(--t-map-bg);
+
+  /* lines */
+  --color-border: var(--t-border);
+  --color-hair: var(--t-hair);
+  --color-track: var(--t-track);
+
+  /* type */
+  --color-fg: var(--t-fg);
+  --color-head: var(--t-head);
+  --color-muted: var(--t-muted);
+  --color-faint: var(--t-faint);
+
+  /* semantic — the `-soft` values are pre-mixed rgba on purpose. Use
+     `bg-crit-soft`, never `bg-crit/15`: the alpha differs per theme and an
+     opacity modifier would flatten that (and wash out in light mode). */
+  --color-accent: var(--t-accent);
+  --color-accent-soft: var(--t-accent-soft);
+  --color-accent-border: var(--t-accent-border);
+  --color-crit: var(--t-crit);
+  --color-crit-soft: var(--t-crit-soft);
+  --color-safe: var(--t-safe);
+  --color-safe-soft: var(--t-safe-soft);
+  --color-warn: var(--t-warn);
+  --color-warn-soft: var(--t-warn-soft);
+  --color-orange: var(--t-orange);
+  --color-orange-soft: var(--t-orange-soft);
+
+  /* incidental */
+  --color-row-hi: var(--t-row-hi);
+  --color-stripe: var(--t-stripe);
+
+  --radius: 0.5rem;
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+}
+
+:root {
+  color-scheme: light;
+  --t-bg: #f4f2ee;
+  --t-panel: #ffffff;
+  --t-panel-2: #faf8f4;
+  --t-border: #e3ded4;
+  --t-hair: #ece7dd;
+  --t-track: #e6e1d7;
+  --t-fg: #1c2230;
+  --t-head: #12161f;
+  --t-muted: #6b7484;
+  --t-faint: #98a0b0;
+  --t-accent: #2f5bd0;
+  --t-accent-soft: rgba(47, 91, 208, 0.1);
+  --t-accent-border: rgba(47, 91, 208, 0.35);
+  --t-crit: #d64550;
+  --t-crit-soft: rgba(214, 69, 80, 0.1);
+  --t-safe: #1f9d6b;
+  --t-safe-soft: rgba(31, 157, 107, 0.1);
+  --t-warn: #c98a1a;
+  --t-warn-soft: rgba(201, 138, 26, 0.12);
+  --t-orange: #d97a2b;
+  --t-orange-soft: rgba(217, 122, 43, 0.12);
+  --t-row-hi: rgba(31, 157, 107, 0.07);
+  --t-input-bg: #faf8f4;
+  --t-map-bg: #eef1f4;
+  --t-stripe: rgba(47, 91, 208, 0.05);
+}
+
+.dark {
+  color-scheme: dark;
+  --t-bg: #0b0f16;
+  --t-panel: #0e131d;
+  --t-panel-2: #0b0f16;
+  --t-border: #1f2836;
+  --t-hair: #1a2331;
+  --t-track: #1f2836;
+  --t-fg: #e6ebf2;
+  --t-head: #ffffff;
+  --t-muted: #7c8aa0;
+  --t-faint: #566178;
+  --t-accent: #59a6ff;
+  --t-accent-soft: rgba(89, 166, 255, 0.12);
+  --t-accent-border: rgba(89, 166, 255, 0.4);
+  --t-crit: #ff5c6c;
+  --t-crit-soft: rgba(255, 92, 108, 0.14);
+  --t-safe: #46d19e;
+  --t-safe-soft: rgba(70, 209, 158, 0.14);
+  --t-warn: #f5b642;
+  --t-warn-soft: rgba(245, 182, 66, 0.14);
+  --t-orange: #ff9f45;
+  --t-orange-soft: rgba(255, 159, 69, 0.14);
+  --t-row-hi: rgba(70, 209, 158, 0.08);
+  --t-input-bg: #0b0f16;
+  --t-map-bg: #070b11;
+  --t-stripe: rgba(89, 166, 255, 0.06);
+}
+
+@layer base {
+  html {
+    @apply font-sans;
+  }
+  body {
+    @apply bg-bg text-fg font-sans antialiased;
+  }
+}
+
+/* Slim range slider matching the design: a 4px track with a panel-filled,
+   accent-ringed handle. The filled portion is supplied per-input as an inline
+   linear-gradient, since it depends on the current value. Kept as a real
+   <input type="range"> for keyboard/a11y support. */
+.slider-slim {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 3px;
+  outline: none;
+  /* Fallback when no inline progress gradient is supplied. */
+  background: var(--t-track);
+}
+.slider-slim::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--t-panel);
+  border: 2px solid var(--t-accent);
+  cursor: pointer;
+}
+.slider-slim::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--t-panel);
+  border: 2px solid var(--t-accent);
+  cursor: pointer;
+}
+.slider-slim:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px var(--t-accent-soft);
+}
+
+/* Thin scrollbars, themed. */
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--t-track);
+  border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--t-muted);
+}
+
+@keyframes omping {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  75%,
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+/* Leaflet Tailwind Resets */
+.leaflet-container img {
+  max-width: none !important;
+  max-height: none !important;
+}
+
+.leaflet-container {
+  z-index: 10;
+}
+
+/* Leaflet popups are Leaflet-owned DOM outside React and ship a hardcoded
+   white background — without this they are white-on-white in dark mode. */
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: var(--t-panel);
+  color: var(--t-fg);
+}
+.leaflet-container a.leaflet-popup-close-button {
+  color: var(--t-muted);
+}
+
+/* Tile attribution is required by the basemap terms; restyle Leaflet's white
+   box so it sits quietly on both themes. */
+.leaflet-container .leaflet-control-attribution {
+  background: color-mix(in srgb, var(--t-panel) 80%, transparent);
+  color: var(--t-faint);
+  font-size: 9px;
+}
+.leaflet-container .leaflet-control-attribution a {
+  color: var(--t-muted);
+}

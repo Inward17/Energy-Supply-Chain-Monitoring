@@ -1,0 +1,7 @@
+# Owners are requested as reviewers automatically when a PR touches their paths.
+# With a single maintainer this mostly documents ownership; it starts to matter
+# once collaborators join and branch protection requires code-owner review.
+*                 @Inward17
+/frontend/        @Inward17
+/backend/         @Inward17
+/.github/         @Inward17

@@ -1,0 +1,214 @@
+{
+  "v": 3,
+  "createdOnFiles": {
+    "v": 1,
+    "at": "2026-10-14T17:30:00Z"
+  },
+  "title": "MERIDIAN Mobile & Data Health",
+  "launch": {
+    "view": "canvas"
+  },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 1240,
+      "title": "Desktop · Overview with data health",
+      "expand": "fill"
+    },
+    "Mobile-Home.dc.html": {
+      "x": 0,
+      "y": 1660,
+      "w": 390,
+      "h": 1180,
+      "title": "Mobile · Overview"
+    },
+    "Mobile-Health.dc.html": {
+      "x": 470,
+      "y": 1660,
+      "w": 390,
+      "h": 844,
+      "title": "Mobile · Data health sheet"
+    },
+    "Mobile-Map.dc.html": {
+      "x": 940,
+      "y": 1660,
+      "w": 390,
+      "h": 844,
+      "title": "Mobile · Threat map + drill-down"
+    },
+    "Mobile-Filters.dc.html": {
+      "x": 1410,
+      "y": 1660,
+      "w": 390,
+      "h": 844,
+      "title": "Mobile · Filters sheet (replaces sidebar)"
+    },
+    "States.dc.html": {
+      "x": 0,
+      "y": 3260,
+      "w": 1440,
+      "h": 980,
+      "title": "Data health · component states"
+    },
+    "Threat-Map.dc.html": {
+      "x": 0,
+      "y": 4840,
+      "w": 1440,
+      "h": 1000,
+      "title": "Desktop · Threat Map",
+      "expand": "fill"
+    },
+    "Risk-Intel.dc.html": {
+      "x": 1520,
+      "y": 4840,
+      "w": 1440,
+      "h": 1100,
+      "title": "Desktop · Risk Intelligence",
+      "expand": "fill"
+    },
+    "Market.dc.html": {
+      "x": 0,
+      "y": 6060,
+      "w": 1440,
+      "h": 1000,
+      "title": "Desktop · Market Pulse",
+      "expand": "fill"
+    },
+    "Reroute.dc.html": {
+      "x": 1520,
+      "y": 6060,
+      "w": 1440,
+      "h": 1000,
+      "title": "Desktop · Reroute Matrix",
+      "expand": "fill"
+    },
+    "SPR.dc.html": {
+      "x": 0,
+      "y": 7280,
+      "w": 1440,
+      "h": 1000,
+      "title": "Desktop · SPR Optimizer",
+      "expand": "fill"
+    },
+    "War-Room.dc.html": {
+      "x": 1520,
+      "y": 7280,
+      "w": 1440,
+      "h": 1100,
+      "title": "Desktop · War Room",
+      "expand": "fill"
+    },
+    "Historical.dc.html": {
+      "x": 0,
+      "y": 8500,
+      "w": 1440,
+      "h": 1000,
+      "title": "Desktop · Historical Validation",
+      "expand": "fill"
+    },
+    "M-Risk.dc.html": {
+      "x": 0,
+      "y": 10000,
+      "w": 390,
+      "h": 1500,
+      "title": "Mobile · Risk Intelligence"
+    },
+    "M-Market.dc.html": {
+      "x": 470,
+      "y": 10000,
+      "w": 390,
+      "h": 1300,
+      "title": "Mobile · Market Pulse"
+    },
+    "M-Reroute.dc.html": {
+      "x": 940,
+      "y": 10000,
+      "w": 390,
+      "h": 1400,
+      "title": "Mobile · Reroute Matrix"
+    },
+    "M-SPR.dc.html": {
+      "x": 1410,
+      "y": 10000,
+      "w": 390,
+      "h": 1400,
+      "title": "Mobile · SPR Optimizer"
+    },
+    "M-War.dc.html": {
+      "x": 1880,
+      "y": 10000,
+      "w": 390,
+      "h": 1500,
+      "title": "Mobile · War Room"
+    },
+    "M-History.dc.html": {
+      "x": 2350,
+      "y": 10000,
+      "w": 390,
+      "h": 1400,
+      "title": "Mobile · Historical Validation"
+    }
+  },
+  "order": [
+    "Main.dc.html",
+    "Mobile-Home.dc.html",
+    "Mobile-Health.dc.html",
+    "Mobile-Map.dc.html",
+    "Mobile-Filters.dc.html",
+    "States.dc.html",
+    "Threat-Map.dc.html",
+    "Risk-Intel.dc.html",
+    "Market.dc.html",
+    "Reroute.dc.html",
+    "SPR.dc.html",
+    "War-Room.dc.html",
+    "Historical.dc.html",
+    "M-Risk.dc.html",
+    "M-Market.dc.html",
+    "M-Reroute.dc.html",
+    "M-SPR.dc.html",
+    "M-War.dc.html",
+    "M-History.dc.html"
+  ],
+  "notes": {
+    "t_desktop": {
+      "x": 0,
+      "y": -300,
+      "text": "Desktop — honest data, calmer hierarchy",
+      "kind": "title1",
+      "maxW": 1440
+    },
+    "t_mobile": {
+      "x": 0,
+      "y": 1360,
+      "text": "Mobile — sidebar becomes sheets",
+      "kind": "title1",
+      "maxW": 1800
+    },
+    "t_states": {
+      "x": 0,
+      "y": 2960,
+      "text": "Data-health states",
+      "kind": "title1",
+      "maxW": 1440
+    },
+    "t_pages": {
+      "x": 0,
+      "y": 4540,
+      "text": "All pages — same system",
+      "kind": "title1",
+      "maxW": 2960
+    },
+    "t_mpages": {
+      "x": 0,
+      "y": 9700,
+      "text": "All pages — mobile",
+      "kind": "title1",
+      "maxW": 2740
+    }
+  },
+  "designSystems": []
+}

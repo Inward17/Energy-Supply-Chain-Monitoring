@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>War Room</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..800&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0;background:#07090C}
+a{color:#5AAEFF}a:hover{color:#9CCEFF}
+</style>
+</helmet>
+<div style="min-height: 1100px; background: #07090C; color: #E6EAEF; font-family: Archivo, system-ui, sans-serif; display: flex; flex-wrap: wrap; align-items: stretch">
+
+  <nav aria-label="Primary" style="flex: 1 1 232px; max-width: 256px; min-width: 220px; box-sizing: border-box; border-right: 1px solid #1A212A; background: #0A0D11; padding: 22px 14px; display: flex; flex-direction: column; gap: 22px">
+    <div style="display: flex; align-items: center; gap: 10px; padding: 0 6px">
+      <svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="#0F1C2B" stroke="#24405F"></circle><path d="M16 4v24M4 16h24" stroke="#24405F" stroke-width="1"></path><circle cx="16" cy="16" r="6" fill="none" stroke="#5AAEFF" stroke-width="2"></circle><circle cx="16" cy="16" r="2" fill="#5AAEFF"></circle></svg>
+      <span style="font-size: 15px; font-weight: 800; letter-spacing: 0.16em; font-stretch: 125%; color: #F5F7FA">MERIDIAN</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 2px; font-size: 13px">
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #7A8697; padding: 0 10px 8px">MONITOR</span>
+      <a href="#" style="padding: 10px; border-radius: 8px; color: #AEB8C5; text-decoration: none">Overview</a>
+      <a href="#" style="padding: 10px; border-radius: 8px; color: #AEB8C5; text-decoration: none">Threat Map</a>
+      <a href="#" style="padding: 10px; border-radius: 8px; color: #AEB8C5; text-decoration: none">Risk Intelligence</a>
+      <a href="#" style="padding: 10px; border-radius: 8px; color: #AEB8C5; text-decoration: none">Market Pulse</a>
+      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #7A8697; padding: 16px 10px 8px">RESPOND</span>
+      <a href="#" style="padding: 10px; border-radius: 8px; color: #AEB8C5; text-decoration: none">Reroute Matrix</a>
+      <a href="#" style="padding: 10px; border-radius: 8px; color: #AEB8C5; text-decoration: none">SPR Optimizer</a>
+      <a href="#" aria-current="page" style="padding: 10px; border-radius: 8px; background: #111A24; box-shadow: inset 2px 0 0 #5AAEFF; color: #F5F7FA; font-weight: 600; text-decoration: none">War Room</a>
+      <a href="#" style="padding: 10px; border-radius: 8px; color: #AEB8C5; text-decoration: none">Historical Validation</a>
+    </div>
+  </nav>
+
+  <main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+    <header style="display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; padding: 18px 32px; border-bottom: 1px solid #1A212A; background: #090C10">
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <h1 style="margin: 0; font-size: 22px; font-weight: 700; font-stretch: 112%; color: #F5F7FA">Executive War Room</h1>
+        <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #94A0AF">Scenario simulation · reroute + reserve plan in one brief</span>
+      </div>
+      <div style="display: flex; gap: 8px">
+        <button type="button" style="height: 40px; padding: 0 14px; border-radius: 10px; border: 1px solid #252F3B; background: #0F141A; color: #E6EAEF; font-family: Archivo, sans-serif; font-size: 13px; display: flex; align-items: center; gap: 8px; cursor: pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"></path></svg>Export PDF</button>
+        <button type="button" style="height: 40px; padding: 0 14px; border-radius: 10px; border: 1px solid #252F3B; background: #0F141A; color: #E6EAEF; font-family: Archivo, sans-serif; font-size: 13px; display: flex; align-items: center; gap: 8px; cursor: pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"></path><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"></path></svg>Copy link</button>
+      </div>
+    </header>
+
+    <div style="padding: 24px 32px 40px; display: flex; flex-direction: column; gap: 20px; max-width: 1180px; box-sizing: border-box; width: 100%">
+
+      <!-- Scenario cards -->
+      <section aria-label="Crisis scenario" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px">
+        <button type="button" aria-pressed="true" style="text-align: left; padding: 16px; border-radius: 14px; border: 1px solid #FF8A3D; background: #1A1410; color: inherit; font-family: Archivo, sans-serif; cursor: pointer; display: flex; flex-direction: column; gap: 6px">
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.12em; color: #FF8A3D">SCENARIO A · LIVE RISK 0.66</span>
+          <span style="font-size: 15px; font-weight: 700; color: #F5F7FA">Hormuz mine closure</span>
+          <span style="font-size: 12px; color: #AEB8C5">21.0 mbpd at stake</span></button>
+        <button type="button" aria-pressed="false" style="text-align: left; padding: 16px; border-radius: 14px; border: 1px solid #1E2731; background: #0E1319; color: inherit; font-family: Archivo, sans-serif; cursor: pointer; display: flex; flex-direction: column; gap: 6px">
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.12em; color: #94A0AF">SCENARIO B · LIVE RISK 0.05</span>
+          <span style="font-size: 15px; font-weight: 700; color: #F5F7FA">Suez Canal drone strikes</span>
+          <span style="font-size: 12px; color: #AEB8C5">9.5 mbpd at stake</span></button>
+        <button type="button" aria-pressed="false" style="text-align: left; padding: 16px; border-radius: 14px; border: 1px solid #1E2731; background: #0E1319; color: inherit; font-family: Archivo, sans-serif; cursor: pointer; display: flex; flex-direction: column; gap: 6px">
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.12em; color: #94A0AF">SCENARIO C · LIVE RISK 0.14</span>
+          <span style="font-size: 15px; font-weight: 700; color: #F5F7FA">Black Sea naval blockade</span>
+          <span style="font-size: 12px; color: #AEB8C5">2.9 mbpd at stake</span></button>
+        <button type="button" aria-pressed="false" style="text-align: left; padding: 16px; border-radius: 14px; border: 1px solid #1E2731; background: #0E1319; color: inherit; font-family: Archivo, sans-serif; cursor: pointer; display: flex; flex-direction: column; gap: 6px">
+          <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.12em; color: #94A0AF">SCENARIO D · LIVE RISK 0.05</span>
+          <span style="font-size: 15px; font-weight: 700; color: #F5F7FA">Malacca piracy surge</span>
+          <span style="font-size: 12px; color: #AEB8C5">16.0 mbpd at stake</span></button>
+      </section>
+
+      <!-- Params summary row + simulate -->
+      <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 14px 16px; border-radius: 14px; background: #0E1319; border: 1px solid #1E2731">
+        <span style="font-size: 13px; color: #AEB8C5">Refinery <strong style="color: #F5F7FA">Jamnagar</strong></span>
+        <span style="color: #3A4656">·</span>
+        <span style="font-size: 13px; color: #AEB8C5">Optimise <strong style="color: #F5F7FA">cost</strong></span>
+        <span style="color: #3A4656">·</span>
+        <span style="font-size: 13px; color: #AEB8C5">Lead time <strong style="color: #F5F7FA">30 d</strong></span>
+        <span style="color: #3A4656">·</span>
+        <span style="font-size: 13px; color: #AEB8C5">Levers <strong style="color: #F5F7FA">3 on</strong></span>
+        <a href="#" style="font-size: 13px; font-weight: 600; text-decoration: none">Edit parameters</a>
+        <button type="button" style="margin-left: auto; height: 44px; padding: 0 22px; border-radius: 10px; border: 0; background: #FF5A5F; color: #1C0F11; font-family: Archivo, sans-serif; font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px; cursor: pointer"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5l12 7-12 7z"></path></svg>Simulate</button>
+      </div>
+
+      <!-- Brief -->
+      <section aria-labelledby="brief-h" style="display: flex; flex-wrap: wrap; gap: 20px">
+        <article style="flex: 3 1 520px; min-width: 0; background: #0E1319; border: 1px solid #1E2731; border-radius: 18px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.04); padding: 26px; display: flex; flex-direction: column; gap: 18px">
+          <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; align-items: center">
+            <h2 id="brief-h" style="margin: 0; font-size: 20px; font-weight: 700; font-stretch: 108%; color: #F5F7FA">Brief · Hormuz mine closure</h2>
+            <span style="display: flex; align-items: center; gap: 8px; padding: 5px 10px; border-radius: 14px; background: #121A24; border: 1px solid #24405F; font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #9CCEFF"><span style="width: 6px; height: 6px; border-radius: 3px; background: #5AAEFF"></span>AI narrative generating…</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px">
+            <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #FF8A8D">SITUATION</span>
+            <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #E6EAEF">Closing Hormuz removes 2.16 mbpd from India’s supply — 40% of imports. Without action the strategic reserve empties in 18.1 days, 11.9 days before replacement cargoes land.</p>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px">
+            <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #3FCF8E">RECOMMENDED ACTIONS</span>
+            <ol style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; line-height: 1.55; color: #E6EAEF">
+              <li>Contract Bonny Light from Nigeria at $107.49/bbl landed, 25.6 days to Jamnagar.</li>
+              <li>Cut refinery run-rates 15%, enact the industrial priority scheme and transport rationing — saves 1.78 mbpd.</li>
+              <li>With both, reserves last 103 days and never fall below 71%.</li>
+            </ol>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px">
+            <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #F2C14E">WATCH</span>
+            <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #E6EAEF">Supply resilience is 12/100 — few routes clear the risk filter. Russian Urals carries 0.64 route risk.</p>
+          </div>
+          <span style="font-size: 11px; color: #7A8697">Facts above come from the models and show instantly; the AI narrative replaces them when ready and never blocks the brief.</span>
+        </article>
+
+        <aside style="flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: 14px">
+          <div style="background: #1C0F11; border: 1px solid #44201F; border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 6px">
+            <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #FF8A8D">RESERVE · NO ACTION</span>
+            <span style="font-size: 30px; font-weight: 700; font-stretch: 108%; color: #F5F7FA">18.1 d</span>
+          </div>
+          <div style="background: #0D1A14; border: 1px solid #1E4A36; border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 6px">
+            <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #3FCF8E">RESERVE · WITH PLAN</span>
+            <span style="font-size: 30px; font-weight: 700; font-stretch: 108%; color: #F5F7FA">103.2 d</span>
+          </div>
+          <div style="background: #0E1319; border: 1px solid #1E2731; border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 6px">
+            <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #94A0AF">TOP REROUTE</span>
+            <span style="font-size: 18px; font-weight: 700; color: #F5F7FA">Bonny Light · $107.49</span>
+            <span style="font-size: 12px; color: #AEB8C5">25.6 days · risk 0.18</span>
+          </div>
+          <div style="background: #0E1319; border: 1px solid #1E2731; border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 6px">
+            <span style="font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: #94A0AF">MACRO · NO ACTION</span>
+            <span style="font-size: 18px; font-weight: 700; color: #F5F7FA">GDP −0.42% · CPI +0.84%</span>
+          </div>
+        </aside>
+      </section>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1100}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>
