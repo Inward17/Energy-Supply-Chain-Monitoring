@@ -448,10 +448,32 @@ def start_background_scheduler() -> threading.Thread | None:
 # Entry Point
 # ---------------------------------------------------------------------------
 
+# Jobs that normally run on their own timers in scheduled mode. A one-shot
+# runner (GitHub Actions cron) asks for them explicitly with --with.
+ONCE_EXTRA_JOBS: dict[str, Callable[[], None]] = {
+    "ais": step_ais_and_snapshot,
+    "portwatch": step_portwatch,
+    "retention": step_retention,
+}
+
+
+def _parse_extra_jobs(raw: str) -> list[str]:
+    jobs = [j.strip() for j in raw.split(",") if j.strip()]
+    unknown = [j for j in jobs if j not in ONCE_EXTRA_JOBS]
+    if unknown:
+        raise SystemExit(f"Unknown --with job(s): {', '.join(unknown)}")
+    return jobs
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Energy Resilience OS — Cron Worker")
     parser.add_argument("--once",     action="store_true", help="Run one cycle then exit")
     parser.add_argument("--backfill", action="store_true", help="Backfill 24h GDELT news then exit")
+    parser.add_argument(
+        "--with", dest="extra_jobs", default="",
+        help="With --once: comma list of extra jobs to run after the cycle "
+             f"({','.join(ONCE_EXTRA_JOBS)}). Used by the scheduled GitHub Actions job.",
+    )
     args = parser.parse_args()
 
     if not _WORKER_LOCK.acquire():
@@ -490,6 +512,9 @@ def _run_worker(args: argparse.Namespace) -> None:
     if args.once:
         logger.info("Single-pass mode — running one full cycle ...")
         run_cycle()
+        for job in _parse_extra_jobs(args.extra_jobs):
+            logger.info("Running extra job: %s", job)
+            _run_step_safely(job, ONCE_EXTRA_JOBS[job])
         logger.info("Done. Exiting.")
         return
 
