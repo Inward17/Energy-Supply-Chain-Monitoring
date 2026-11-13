@@ -80,7 +80,7 @@ jobs:
             echo "No backend changes — skipping." >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         if: steps.changes.outputs.backend == 'true'
         with:
           python-version: "3.13" # matches backend/Dockerfile
