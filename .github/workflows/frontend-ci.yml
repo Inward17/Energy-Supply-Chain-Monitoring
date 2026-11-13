@@ -54,7 +54,7 @@ jobs:
             echo "No frontend changes — skipping." >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         if: steps.changes.outputs.frontend == 'true'
         with:
           node-version: 20
