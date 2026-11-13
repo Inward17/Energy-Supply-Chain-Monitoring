@@ -13,6 +13,13 @@ updates:
     groups:
       frontend-minor:
         update-types: [minor, patch]
+    ignore:
+      # TypeScript 7 (native port) breaks the Next build; @types/node tracks the
+      # Node runtime (20/22), not the latest types. Revisit on runtime upgrades.
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
+      - dependency-name: "@types/node"
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: pip
     directory: /backend
