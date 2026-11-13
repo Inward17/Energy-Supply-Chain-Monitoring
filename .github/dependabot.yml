@@ -31,6 +31,15 @@ updates:
     groups:
       backend-minor:
         update-types: [minor, patch]
+    ignore:
+      # google-genai 3 defaults to API v1, where gemini-flash-latest 404s.
+      # websockets 17 and tenacity >=9.2 need genai 3. Revisit together.
+      - dependency-name: google-genai
+        update-types: [version-update:semver-major]
+      - dependency-name: websockets
+        update-types: [version-update:semver-major]
+      - dependency-name: tenacity
+        versions: [">=9.2"]
 
   - package-ecosystem: github-actions
     directory: /
