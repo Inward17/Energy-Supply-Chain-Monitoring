@@ -31,7 +31,7 @@ from typing import Any
 
 from neo4j import GraphDatabase, Driver
 from dotenv import load_dotenv
-load_dotenv(override=True)
+load_dotenv()
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------

@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import re
+import threading
 import time
 from collections import deque
 from typing import Any
@@ -35,7 +36,7 @@ from tenacity import (
 )
 from dotenv import load_dotenv
 
-load_dotenv(override=True)
+load_dotenv()
 from src.database.postgres_db import (
     fetch_unprocessed_news,
     mark_news_processed,
@@ -296,28 +297,34 @@ def _rotate_key() -> bool:
 # ---------------------------------------------------------------------------
 
 _request_timestamps: deque = deque(maxlen=60)
+# Shared by request threads, the scheduler and backtests.
+_rate_lock = threading.Lock()
 _RPM_LIMIT = 15
 _RPM_WARN  = 12
 
 
 def _check_rate_limit() -> None:
-    """Block execution if approaching RPM limit; log a warning at the threshold."""
-    now = time.monotonic()
-    # Remove timestamps older than 60 seconds
-    while _request_timestamps and now - _request_timestamps[0] > 60:
-        _request_timestamps.popleft()
+    """Block execution if approaching RPM limit; log a warning at the threshold.
 
-    recent_count = len(_request_timestamps)
-
-    if recent_count >= _RPM_LIMIT:
-        sleep_time = 62 - (now - _request_timestamps[0])
-        logger.warning("[RATE GUARD] RPM limit reached. Sleeping %.1fs.", sleep_time)
-        time.sleep(max(sleep_time, 1))
-    elif recent_count >= _RPM_WARN:
-        logger.warning("[RATE GUARD] Approaching RPM limit (%d/%d). Slowing down.", recent_count, _RPM_LIMIT)
-        time.sleep(4)
-
-    _request_timestamps.append(time.monotonic())
+    The sleep is decided under the lock but taken outside it, so a waiting
+    caller does not stall every other thread's bookkeeping.
+    """
+    with _rate_lock:
+        now = time.monotonic()
+        while _request_timestamps and now - _request_timestamps[0] > 60:
+            _request_timestamps.popleft()
+        recent_count = len(_request_timestamps)
+        sleep_time = 0.0
+        if recent_count >= _RPM_LIMIT:
+            sleep_time = max(62 - (now - _request_timestamps[0]), 1)
+            logger.warning("[RATE GUARD] RPM limit reached. Sleeping %.1fs.", sleep_time)
+        elif recent_count >= _RPM_WARN:
+            logger.warning("[RATE GUARD] Approaching RPM limit (%d/%d). Slowing down.", recent_count, _RPM_LIMIT)
+            sleep_time = 4.0
+        # Reserve the slot now so concurrent callers count it.
+        _request_timestamps.append(now + sleep_time)
+    if sleep_time:
+        time.sleep(sleep_time)
 
 
 # ---------------------------------------------------------------------------
@@ -464,7 +471,7 @@ def _build_prompt(headlines: list[str]) -> str:
     stop=stop_after_attempt(3),
     reraise=False,
 )
-def _call_gemini(prompt: str) -> dict[str, Any] | None:
+def _call_gemini(prompt: str) -> list[dict[str, Any]] | None:
     """Submit a prompt to Gemini and parse the JSON response.
 
     On a quota rejection the call is retried against the next configured key

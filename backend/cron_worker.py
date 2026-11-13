@@ -39,7 +39,7 @@ from typing import BinaryIO, Callable
 import schedule
 from dotenv import load_dotenv
 
-load_dotenv(override=True)
+load_dotenv()
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -62,6 +62,8 @@ logging.basicConfig(
     handlers=_LOG_HANDLERS,
 )
 logger = logging.getLogger("cron_worker")
+# httpx logs request URLs at INFO; news provider keys ride in query strings.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 # ---------------------------------------------------------------------------
 # Worker/process locks

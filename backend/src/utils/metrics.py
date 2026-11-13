@@ -18,7 +18,7 @@ from typing import Sequence
 from dotenv import load_dotenv
 from src.utils.constants import MARKET_Z_CLIP_SIGMAS
 
-load_dotenv(override=True)
+load_dotenv()
 
 
 # ---------------------------------------------------------------------------

@@ -21,7 +21,7 @@ jobs:
         if: env.HAS_NEON == 'true'
         # A PR that never touched backend/ never got a branch; ignore "not found".
         continue-on-error: true
-        uses: neondatabase/delete-branch-action@v3
+        uses: neondatabase/delete-branch-action@4468d825d5a88ef4012f1705a82f02ec3072f776 # v3 — pinned: receives NEON_API_KEY
         with:
           project_id: ${{ vars.NEON_PROJECT_ID }}
           api_key: ${{ secrets.NEON_API_KEY }}

@@ -4,9 +4,6 @@ const nextConfig = {
   // (see lib/api.ts), so `next build` emits a plain `out/` directory that
   // Cloudflare Pages can serve directly — no SSR adapter needed.
   output: 'export',
-  typescript: {
-    ignoreBuildErrors: true,
-  },
   images: {
     unoptimized: true,
   },

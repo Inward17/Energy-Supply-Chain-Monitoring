@@ -17,6 +17,21 @@ from src.database.postgres_db import upsert_risk_event_backtest, update_backtest
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
+def pick_day_event(events) -> dict | None:
+    """Collapse Sentinel's multi-event response to the day's driving event.
+
+    `_call_gemini` returns a list (one object per distinct incident). The
+    backtest stores one row per day, and the SDI is driven by the most severe
+    event, so keep the highest-severity one. This used to call `.get()` on the
+    list and failed every backtest with "'list' object has no attribute 'get'".
+    """
+    if not events:
+        return None
+    if isinstance(events, dict):
+        return events
+    return max(events, key=lambda e: float(e.get("severity", 0.0) or 0.0))
+
+
 def run_backtest(job_id: int, event_name: str, start_date_str: str = None, end_date_str: str = None):
     try:
         EVENT_DATES = {
@@ -25,10 +40,9 @@ def run_backtest(job_id: int, event_name: str, start_date_str: str = None, end_d
             "israel_iran_war_2025": ("2025-05-25", "2025-06-30")
         }
         if not start_date_str or not end_date_str:
-            if event_name in EVENT_DATES:
-                start_date_str, end_date_str = EVENT_DATES[event_name]
-            else:
-                start_date_str, end_date_str = "2023-11-15", "2024-01-31"
+            if event_name not in EVENT_DATES:
+                raise ValueError(f"Unknown backtest event: {event_name!r}")
+            start_date_str, end_date_str = EVENT_DATES[event_name]
 
         update_backtest_job(job_id, "running")
         start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
@@ -122,7 +136,7 @@ def run_backtest(job_id: int, event_name: str, start_date_str: str = None, end_d
                 retry_count = 0
                 while True:
                     try:
-                        scored = _call_gemini(prompt)
+                        scored = pick_day_event(_call_gemini(prompt))
                         if not scored:
                             if retry_count >= max_retries:
                                 raise RuntimeError("Gemini returned empty 3 times in a row.")
@@ -134,7 +148,7 @@ def run_backtest(job_id: int, event_name: str, start_date_str: str = None, end_d
                     except Exception as exc:
                         if retry_count >= max_retries:
                             logger.error("Gemini call failed permanently after %d retries: %s", max_retries, exc)
-                            raise RuntimeError(f"Gemini API daily quota likely exhausted. Aborting backtest: {exc}")
+                            raise RuntimeError("Gemini quota exhausted") from exc
                         logger.error("Gemini call failed: %s. Retrying in 60s...", exc)
                         retry_count += 1
                         time.sleep(60)
@@ -194,7 +208,13 @@ def run_backtest(job_id: int, event_name: str, start_date_str: str = None, end_d
             
     except Exception as exc:
         logger.error(f"Backtest job {job_id} failed: {exc}", exc_info=True)
-        update_backtest_job(job_id, "failed", str(exc))
+        # error_log is served publicly; store a fixed category, not exception text.
+        reason = (
+            "Gemini quota exhausted \u2014 retry after the daily reset."
+            if "quota" in str(exc).lower()
+            else "Backtest failed \u2014 see server logs."
+        )
+        update_backtest_job(job_id, "failed", reason)
 
 if __name__ == "__main__":
     import argparse
