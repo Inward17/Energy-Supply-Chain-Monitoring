@@ -84,6 +84,9 @@ FIXER_WEIGHT_CONGESTION: float = 0.15
 #: Gemini model used for news analysis; overridable via GEMINI_MODEL env var
 SENTINEL_GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
+#: Lighter model tried once when the primary answers 503 (overloaded).
+GEMINI_FALLBACK_MODEL: str = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-flash-lite-latest")
+
 #: Approximate vessel density divergence assigned when a high-severity event
 #: is detected but no live AIS baseline is available
 SENTINEL_DELTA_D_HIGH: float = 0.3

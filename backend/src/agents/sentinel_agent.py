@@ -55,6 +55,7 @@ logger = logging.getLogger(__name__)
 from src.utils.constants import (
     CHOKEPOINTS_SET,
     SENTINEL_GEMINI_MODEL,
+    GEMINI_FALLBACK_MODEL,
     SENTINEL_DELTA_D_HIGH,
     SENTINEL_DELTA_D_LOW,
     SENTINEL_SEVERITY_THRESHOLD,
@@ -465,6 +466,34 @@ def _build_prompt(headlines: list[str]) -> str:
 # Gemini Call with Retry
 # ---------------------------------------------------------------------------
 
+def _is_overloaded(exc: Exception) -> bool:
+    message = str(exc)
+    return "503" in message or "UNAVAILABLE" in message
+
+
+def generate_with_fallback(client: genai.Client, prompt: str, *, temperature: float) -> Any:
+    """Call the primary model; on 503 (overloaded) try the lighter model once.
+
+    Production logs showed the primary answering 503 on every retry for whole
+    cycles, which left headlines unscored for weeks.
+    """
+    config = types.GenerateContentConfig(temperature=temperature)
+    try:
+        return client.models.generate_content(
+            model=SENTINEL_GEMINI_MODEL, contents=prompt, config=config
+        )
+    except Exception as exc:  # noqa: BLE001 — SDK raises bare ServerError
+        if not _is_overloaded(exc) or GEMINI_FALLBACK_MODEL == SENTINEL_GEMINI_MODEL:
+            raise
+        logger.warning(
+            "sentinel_agent: %s overloaded (503); retrying on %s.",
+            SENTINEL_GEMINI_MODEL, GEMINI_FALLBACK_MODEL,
+        )
+        return client.models.generate_content(
+            model=GEMINI_FALLBACK_MODEL, contents=prompt, config=config
+        )
+
+
 @retry(
     retry=retry_if_exception_type(Exception),
     wait=wait_exponential(multiplier=2, min=5, max=60),
@@ -485,13 +514,8 @@ def _call_gemini(prompt: str) -> list[dict[str, Any]] | None:
     for _ in range(attempts):
         client = _get_client()
         try:
-            response = client.models.generate_content(
-                model=SENTINEL_GEMINI_MODEL,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.1,   # Low temperature for structured factual output
-                ),
-            )
+            # Low temperature for structured factual output
+            response = generate_with_fallback(client, prompt, temperature=0.1)
             break
         except Exception as exc:      # noqa: BLE001 — SDK raises bare ClientError
             last_error = exc
@@ -759,7 +783,12 @@ def process_unprocessed_batch(batch_size: int = 10) -> int:
         logger.error("sentinel_agent: Gemini call failed — %s", exc)
         return 0
 
+    if scored_events is None:
+        return 0
     if not scored_events:
+        # Gemini answered and found nothing relevant. Mark the batch done, or
+        # the same headlines are re-sent (and re-billed) every cycle.
+        mark_news_processed(news_ids)
         return 0
 
     # Market context is shared by every event in the batch, so fetch it once.

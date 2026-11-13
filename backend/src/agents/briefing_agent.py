@@ -9,10 +9,8 @@ Gemini 2.5 Flash to generate a formal Emergency Action Plan.
 
 import os
 from google import genai
-from google.genai import types
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
-from src.utils.constants import SENTINEL_GEMINI_MODEL
-from src.agents.sentinel_agent import _sanitise_headline
+from src.agents.sentinel_agent import _sanitise_headline, generate_with_fallback
 
 def generate_emergency_brief(scenario_name, target_refinery, spr_data, reroute_df):
     """
@@ -78,14 +76,7 @@ def generate_emergency_brief(scenario_name, target_refinery, spr_data, reroute_d
         reraise=True,
     )
     def _generate():
-        response = client.models.generate_content(
-            model=SENTINEL_GEMINI_MODEL,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.3,
-            )
-        )
-        return response.text
+        return generate_with_fallback(client, prompt, temperature=0.3).text
 
     try:
         return _generate()

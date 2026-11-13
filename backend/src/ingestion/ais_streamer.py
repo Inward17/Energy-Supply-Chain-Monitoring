@@ -44,6 +44,15 @@ AISSTREAM_URI = "wss://stream.aisstream.io/v0/stream"
 DEFAULT_SNAPSHOT_SECONDS = 600
 AIS_STATIC_BROADCAST_PERIOD_SECONDS = 360
 
+# AISStream answers the handshake with HTTP 429 when throttled. Render shares
+# outbound IPs between tenants, so this hits production even at one connection
+# per hour, and a single 429 used to cost the whole hourly window.
+THROTTLE_RETRY_DELAYS_SECONDS = (30, 90, 180)
+
+
+class _Throttled(Exception):
+    """AISStream rejected the handshake with HTTP 429."""
+
 # ---------------------------------------------------------------------------
 # Bounding Boxes for Strategic Chokepoints
 # ---------------------------------------------------------------------------
@@ -165,6 +174,11 @@ async def _stream_snapshot(
                 except (KeyError, json.JSONDecodeError):
                     continue
 
+    except websockets.exceptions.InvalidStatus as exc:
+        status = getattr(exc.response, "status_code", None)
+        if status == 429:
+            raise _Throttled from exc
+        logger.error("AISStream rejected the connection: HTTP %s", status)
     except websockets.exceptions.InvalidURI:
         logger.error("AISStream: invalid URI. Check AISSTREAM_API_KEY.")
     except websockets.exceptions.WebSocketException as exc:
@@ -201,17 +215,29 @@ def snapshot_vessels(duration_seconds: int | None = None) -> int:
     # The in-loop deadline is only evaluated when a message arrives, so a stalled
     # socket could otherwise block the cron worker for the whole window. Cap it.
     async def _collect() -> None:
-        try:
-            await asyncio.wait_for(
-                _stream_snapshot(api_key, secs, buffer, ship_types_cache, new_ship_types),
-                timeout=secs + 30,
-            )
-        except asyncio.TimeoutError:
-            logger.warning(
-                "AISStream: snapshot exceeded %ds budget; keeping %d records collected so far.",
-                secs + 30,
-                len(buffer),
-            )
+        for delay in (0, *THROTTLE_RETRY_DELAYS_SECONDS):
+            if delay:
+                logger.warning("AISStream throttled (HTTP 429); retrying in %ds.", delay)
+                await asyncio.sleep(delay)
+            try:
+                await asyncio.wait_for(
+                    _stream_snapshot(api_key, secs, buffer, ship_types_cache, new_ship_types),
+                    timeout=secs + 30,
+                )
+                return
+            except _Throttled:
+                continue
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "AISStream: snapshot exceeded %ds budget; keeping %d records collected so far.",
+                    secs + 30,
+                    len(buffer),
+                )
+                return
+        logger.error(
+            "AISStream still throttled after %d attempts; skipping this window.",
+            len(THROTTLE_RETRY_DELAYS_SECONDS) + 1,
+        )
 
     # Run async collection synchronously
     try:

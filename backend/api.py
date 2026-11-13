@@ -983,8 +983,7 @@ def get_backtest(
         price_df = pd.DataFrame(price_records)
         if not price_df.empty:
             price_df["date"] = pd.to_datetime(price_df["date"]).dt.date
-            price_df.sort_values("date", inplace=True)
-            price_df.set_index("date", inplace=True)
+            price_df = price_df.sort_values("date").set_index("date")
             
             # Calculate 14-day rolling mean and std to detect short-term breakouts
             price_df["mean_14d"] = price_df["price"].rolling(14).mean()

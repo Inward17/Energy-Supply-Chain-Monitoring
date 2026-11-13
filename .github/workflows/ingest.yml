@@ -1,0 +1,88 @@
+# Hourly data ingestion, independent of the Render web service.
+#
+# Render's free tier sleeps after 15 idle minutes, and the in-process worker
+# sleeps with it, so production data only refreshed when someone visited.
+# This job runs the same pipeline on a schedule and writes straight to Neon:
+#   every hour       market, freight, news, Sentinel, SDI + AIS snapshot
+#   00:xx and 12:xx  also PortWatch and telemetry retention
+# Once this is green, set RUN_WORKER=0 on Render so the two don't double up.
+name: ingest
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+    inputs:
+      jobs:
+        description: "Extra jobs after the cycle (comma list: ais,portwatch,retention)"
+        default: "ais"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ingest
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    if: github.repository == 'Inward17/Energy-Supply-Chain-Monitoring'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DB_HOST: ${{ secrets.DB_HOST }}
+      DB_PORT: ${{ secrets.DB_PORT }}
+      DB_NAME: ${{ secrets.DB_NAME }}
+      DB_USER: ${{ secrets.DB_USER }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      DB_SSLMODE: require
+      GEMINI_API_KEYS: ${{ secrets.GEMINI_API_KEYS }}
+      GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-flash-latest' }}
+      AISSTREAM_API_KEY: ${{ secrets.AISSTREAM_API_KEY }}
+      NEWSDATA_API_KEY: ${{ secrets.NEWSDATA_API_KEY }}
+      GNEWS_API_KEY: ${{ secrets.GNEWS_API_KEY }}
+      NEWSAPI_API_KEY: ${{ secrets.NEWSAPI_API_KEY }}
+      NEO4J_URI: ${{ secrets.NEO4J_URI }}
+      NEO4J_USER: ${{ secrets.NEO4J_USER }}
+      NEO4J_PASSWORD: ${{ secrets.NEO4J_PASSWORD }}
+    steps:
+      - name: Skip until database secrets are set
+        id: gate
+        run: |
+          if [ -z "$DB_HOST" ]; then
+            echo "::notice::DB_HOST secret not set — skipping ingestion."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v7
+        if: steps.gate.outputs.run == 'true'
+
+      - uses: actions/setup-python@v7
+        if: steps.gate.outputs.run == 'true'
+        with:
+          python-version: "3.13" # matches backend/Dockerfile
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install
+        if: steps.gate.outputs.run == 'true'
+        run: pip install -r requirements.txt
+
+      - name: Run pipeline
+        if: steps.gate.outputs.run == 'true'
+        env:
+          MANUAL_JOBS: ${{ inputs.jobs }}
+        run: |
+          jobs="ais"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            jobs="$MANUAL_JOBS"
+          elif [ "$(date -u +%H)" = "00" ] || [ "$(date -u +%H)" = "12" ]; then
+            jobs="ais,portwatch,retention"
+          fi
+          echo "Extra jobs: ${jobs:-none}"
+          python cron_worker.py --once --with "$jobs"

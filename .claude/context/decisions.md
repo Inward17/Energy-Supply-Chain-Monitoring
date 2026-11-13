@@ -18,6 +18,11 @@
 - Leaflet colours resolved from CSS vars via `cssColor()` (SVG attrs).
 - Hash routing (`#page`) — static export, no server routes.
 
+- Ingestion runs in GitHub Actions (`ingest.yml`), not on Render: the free
+  instance sleeps and AISStream 429s Render's shared IPs. AIS retries 429 with
+  30/90/180 s backoff. Gemini 503 falls back to `GEMINI_FALLBACK_MODEL` once.
+- google-genai held at 2.x: 3.0 defaults to API v1 where `gemini-flash-latest` 404s.
+
 ## Open items
 - Neon branch creation returns **HTTP 412** in CI (cause unconfirmed; CI falls
   back to a container). `continue-on-error` hides it — check the job summary.

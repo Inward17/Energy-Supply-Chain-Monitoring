@@ -27,7 +27,8 @@
 ## GitHub (`Inward17/Energy-Supply-Chain-Monitoring`)
 - Workflows: `frontend-ci` (job `verify`), `backend-ci` (job `test`, Neon
   branch `ci/pr-<n>` per PR with Postgres-container fallback), `neon-cleanup`,
-  `codeql`. Dependabot weekly. GitGuardian + Cloudflare apps installed.
+  `codeql`, `ingest` (hourly `cron_worker.py --once --with ais[,portwatch,retention]`
+  against Neon; needs DB_*/Gemini/news/AIS/NEO4J_* secrets; Render then runs `RUN_WORKER=0`). Dependabot weekly. GitGuardian + Cloudflare apps installed.
 - Secrets/vars: `NEON_API_KEY` (secret), `NEON_PROJECT_ID` (var).
 - Required checks to add after first runs: `verify`, `test`.
 - Full walkthrough: `docs/github-workflow.md`.
