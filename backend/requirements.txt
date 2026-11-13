@@ -2,19 +2,19 @@
 # suite passed against. Dependabot (.github/dependabot.yml) proposes upgrades as
 # PRs, so bumps arrive through CI instead of silently at build time.
 psycopg2-binary==2.9.13
-SQLAlchemy==2.0.51
-neo4j==6.2.0
+SQLAlchemy==2.1.8
+neo4j==6.4.1
 google-genai==2.10.0
 yfinance==1.8.0
-pandas==3.0.3
+pandas==3.1.1
 numpy==2.5.4
 websockets==16.0
-python-dotenv==1.2.2
+python-dotenv==1.2.4
 httpx==0.28.1
-tenacity==9.1.4
+tenacity==9.2.1
 schedule==1.2.2
-fastapi==0.139.0
+fastapi==0.162.4
 uvicorn==0.54.0
 searoute==1.6.0
-pytest==9.1.1
-pytest-mock==3.15.1
+pytest==9.2.0
+pytest-mock==3.17.0
