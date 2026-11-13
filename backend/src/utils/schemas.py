@@ -74,5 +74,11 @@ class WarRoomRequest(BaseModel):
     transport_cut: float = Field(0.10, ge=0.0, le=0.5)
 
 
+#: Backtests replay a fixed historical window and spend Gemini quota per day,
+#: so only the curated events are accepted. A free-text name used to fall back
+#: to the Red Sea dates and store junk rows under whatever name was sent.
+BacktestEvent = Literal["red_sea_attacks", "russia_ukraine_buildup", "israel_iran_war_2025"]
+
+
 class BacktestRequest(BaseModel):
-    event_name: str = Field(..., min_length=1, max_length=_NAME_MAX)
+    event_name: BacktestEvent

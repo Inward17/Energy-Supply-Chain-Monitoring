@@ -21,8 +21,17 @@ from typing import Any, Generator
 from sqlalchemy import create_engine, text, Engine
 from sqlalchemy.pool import QueuePool
 from dotenv import load_dotenv
-load_dotenv(override=True)
+load_dotenv()
 logger = logging.getLogger(__name__)
+
+
+class DatabaseUnavailable(RuntimeError):
+    """A read failed because Postgres could not be queried.
+
+    Read helpers used to swallow errors and return [] / None, which made an
+    outage indistinguishable from "no data": the dashboard showed an empty
+    feed and a LOW SDI instead of an error. Raising lets the API answer 503.
+    """
 
 # ---------------------------------------------------------------------------
 # Engine Singleton
@@ -465,7 +474,7 @@ def fetch_vessels(region: str | None = None, limit: int = 500) -> list[dict[str,
             return [dict(r) for r in rows]
     except Exception as exc:
         logger.error("fetch_vessels failed: %s", exc)
-        return []
+        raise DatabaseUnavailable("fetch_vessels") from exc
 
 
 def record_provider_call(provider: str) -> None:
@@ -694,7 +703,7 @@ def fetch_latest_prices(
             return [dict(r) for r in rows]
     except Exception as exc:
         logger.error("fetch_latest_prices failed: %s", exc)
-        return []
+        raise DatabaseUnavailable("fetch_latest_prices") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -756,7 +765,7 @@ def fetch_risk_events(limit: int = 50) -> list[dict[str, Any]]:
             return [dict(r) for r in rows]
     except Exception as exc:
         logger.error("fetch_risk_events failed: %s", exc)
-        return []
+        raise DatabaseUnavailable("fetch_risk_events") from exc
 
 def fetch_risk_event(event_id: int) -> dict[str, Any] | None:
     """Return a single risk event by ID."""
@@ -774,7 +783,7 @@ def fetch_risk_event(event_id: int) -> dict[str, Any] | None:
             return dict(row) if row else None
     except Exception as exc:
         logger.error("fetch_risk_event failed: %s", exc)
-        return None
+        raise DatabaseUnavailable("fetch_risk_event") from exc
 
 def fetch_latest_sdi() -> float:
     """Return the most recent SDI score for the dashboard summary metric."""
@@ -853,7 +862,7 @@ def fetch_sdi_snapshots(limit: int = 50) -> list[dict[str, Any]]:
             return [dict(row) for row in rows]
     except Exception as exc:
         logger.error("fetch_sdi_snapshots failed: %s", exc)
-        return []
+        raise DatabaseUnavailable("fetch_sdi_snapshots") from exc
 
 # ---------------------------------------------------------------------------
 # risk_events_backtest
@@ -992,4 +1001,4 @@ def fetch_all_backtest_jobs() -> list[dict[str, Any]]:
             return [dict(r) for r in rows]
     except Exception as exc:
         logger.error("fetch_all_backtest_jobs failed: %s", exc)
-        return []
+        raise DatabaseUnavailable("fetch_all_backtest_jobs") from exc

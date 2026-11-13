@@ -22,13 +22,16 @@ import json
 import logging
 import os
 import threading
+import time
+from contextlib import asynccontextmanager
 import pandas as pd
 from typing import Any
 from datetime import datetime, timedelta, date, timezone
 
-from fastapi import FastAPI, HTTPException, Path, Query
+from fastapi import FastAPI, HTTPException, Path, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from src.utils.schemas import RerouteRequest, SprRequest, WarRoomRequest, BacktestRequest
+from src.utils.rate_limit import RateLimiter
 
 # ── Agent imports (untouched business logic) ────────────────────────────────
 from src.agents.fixer_agent import (
@@ -47,6 +50,7 @@ from src.agents.modeler_agent import (
     explain_producer_risk,
 )
 from src.database.postgres_db import (
+    DatabaseUnavailable,
     init_schema,
     fetch_unprocessed_news,
     fetch_vessels,
@@ -70,15 +74,28 @@ from src.utils.constants import (
 )
 
 from dotenv import load_dotenv
-load_dotenv(override=True)
+load_dotenv()
 from src.ingestion.market_trawler import get_brent_rolling_stats
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("api")
+# httpx logs every request URL at INFO. NewsData and GNews take their API key
+# as a query parameter, so those lines put live keys into the platform logs.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 # ── FastAPI setup ─────────────────────────────────────────────────────────────
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Bind the port immediately; do the slow work behind it."""
+    threading.Thread(
+        target=_deferred_startup, name="deferred-startup", daemon=True
+    ).start()
+    yield
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="Energy Resilience OS API",
     description="REST bridge between the React frontend and the Python agent layer.",
     version="1.0.0",
@@ -130,6 +147,65 @@ logger.info("CORS allowed origins: %s (regex: %s)", CORS_ORIGINS, CORS_ORIGIN_RE
 #: DB schema, file paths and driver internals that aid an attacker; the detail
 #: still reaches the server log for debugging.
 _INTERNAL_ERROR = "Internal server error"
+_DEGRADED = "Data temporarily unavailable"
+
+
+def _server_error(exc: Exception) -> HTTPException:
+    """503 when Postgres is down (retryable), 500 for everything else."""
+    if isinstance(exc, DatabaseUnavailable):
+        return HTTPException(status_code=503, detail="Database unavailable")
+    return HTTPException(status_code=500, detail=_INTERNAL_ERROR)
+
+
+# Spend-bearing routes. Limits are generous for a human clicking around and
+# tight enough that a script cannot drain the daily Gemini quota.
+_war_room_limit = RateLimiter("war-room", per_client=5, global_limit=30, window_s=60 * 60)
+_backtest_limit = RateLimiter("backtest", per_client=2, global_limit=4, window_s=60 * 60)
+_model_limit = RateLimiter("models", per_client=30, global_limit=300, window_s=60)
+
+# War Room briefs depend only on their inputs; cache them so repeat clicks on
+# the same scenario never hit Gemini twice.
+_BRIEF_TTL_S = 30 * 60
+_brief_cache: dict[tuple, tuple[float, str]] = {}
+_brief_lock = threading.Lock()
+
+
+def _cached_brief(key: tuple, build) -> str:
+    now = time.monotonic()
+    with _brief_lock:
+        hit = _brief_cache.get(key)
+        if hit and now - hit[0] < _BRIEF_TTL_S:
+            return hit[1]
+    text = build()
+    # Don't cache the "unavailable" placeholder; the next click should retry.
+    if not text.startswith("\u26a0"):
+        with _brief_lock:
+            if len(_brief_cache) > 256:
+                _brief_cache.clear()
+            _brief_cache[key] = (now, text)
+    return text
+
+
+# Backtest failure text is shown publicly; only these fixed messages leave the
+# server. Anything else (raw exception text) is reduced to a generic message.
+_BACKTEST_ERRORS = {
+    "quota": "Gemini quota exhausted \u2014 retry after the daily reset.",
+    "interrupted": "Interrupted by a server restart.",
+    "busy": "Server busy \u2014 another backtest is already running.",
+    "internal": "Backtest failed \u2014 see server logs.",
+}
+
+
+def _public_backtest_error(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    if raw in _BACKTEST_ERRORS.values():
+        return raw
+    if "quota" in raw.lower():
+        return _BACKTEST_ERRORS["quota"]
+    if "restart" in raw.lower():
+        return _BACKTEST_ERRORS["interrupted"]
+    return _BACKTEST_ERRORS["internal"]
 
 
 # ── Health ────────────────────────────────────────────────────────────────────
@@ -169,7 +245,7 @@ def _reap_orphaned_backtests() -> None:
         for job in fetch_all_backtest_jobs():
             if job.get("status") in ("running", "pending"):
                 update_backtest_job(
-                    job["id"], "failed", "Interrupted by a server restart."
+                    job["id"], "failed", _BACKTEST_ERRORS["interrupted"]
                 )
                 logger.info("Reaped orphaned backtest job %s.", job["id"])
     except Exception as exc:
@@ -230,14 +306,6 @@ def _deferred_startup() -> None:
         logger.error("In-process worker failed to start: %s", exc, exc_info=True)
 
 
-@app.on_event("startup")
-def startup():
-    """Bind the port immediately; do the slow work behind it."""
-    threading.Thread(
-        target=_deferred_startup, name="deferred-startup", daemon=True
-    ).start()
-
-
 # ── Endpoints: Metrics & Live Data ────────────────────────────────────────────
 
 @app.get("/api/metrics/live")
@@ -266,10 +334,10 @@ def get_live_metrics() -> dict[str, Any]:
             "active_alerts":    sdi_data["active_alerts"],
             "gemini_configured": sdi_data.get("gemini_configured", True),
             "ais_configured":    sdi_data.get("ais_configured", True),
-            "w1":               sdi_data.get("w1", 0.40),
+            "w1":               sdi_data.get("w1", 0.50),
             "w2":               sdi_data.get("w2", 0.25),
-            "w3":               sdi_data.get("w3", 0.15),
-            "w4":               sdi_data.get("w4", 0.20),
+            "w3":               sdi_data.get("w3", 0.10),
+            "w4":               sdi_data.get("w4", 0.15),
             "confidence":       sdi_data.get("confidence", 0.5),
             "ais_status":       sdi_data.get("ais_status", "unavailable"),
             "ais_type_coverage": sdi_data.get("ais_type_coverage", 0.0),
@@ -285,14 +353,14 @@ def get_live_metrics() -> dict[str, Any]:
         }
     except ValueError as exc:
         logger.warning("get_live_metrics degraded: %s", exc)
-        return {"status": "degraded", "error": str(exc)}
+        return {"status": "degraded", "error": _DEGRADED}
     except Exception as exc:
         logger.error("get_live_metrics failed: %s", exc)
-        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
+        raise _server_error(exc)
 
 
 @app.get("/api/risk/events")
-def get_risk_events(limit: int = 10) -> list[dict[str, Any]]:
+def get_risk_events(limit: int = Query(10, ge=1, le=200)) -> list[dict[str, Any]]:
     """
     Return the latest Sentinel-scored geopolitical risk events.
     Powers the Risk Intelligence tab event feed.
@@ -344,10 +412,10 @@ def get_risk_events(limit: int = 10) -> list[dict[str, Any]]:
         return result
     except Exception as exc:
         logger.error("get_risk_events failed: %s", exc)
-        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
+        raise _server_error(exc)
 
 @app.get("/api/risk/events/{event_id}")
-def get_risk_event_detail(event_id: int) -> dict[str, Any]:
+def get_risk_event_detail(event_id: int = Path(..., ge=1, le=2_147_483_647)) -> dict[str, Any]:
     """
     Return detailed information for a single risk event, including
     potentially affected crude grades from Neo4j.
@@ -437,7 +505,7 @@ def get_risk_event_detail(event_id: int) -> dict[str, Any]:
         raise
     except Exception as exc:
         logger.error("get_risk_event_detail failed: %s", exc)
-        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
+        raise _server_error(exc)
 
 
 @app.get("/api/risk/chokepoints")
@@ -450,10 +518,10 @@ def get_chokepoint_matrix() -> list[dict[str, Any]]:
         return compute_chokepoint_risk_matrix()
     except ValueError as exc:
         logger.warning("get_chokepoint_matrix degraded: %s", exc)
-        return [{"status": "degraded", "error": str(exc)}]
+        return [{"status": "degraded", "error": _DEGRADED}]
     except Exception as exc:
         logger.error("get_chokepoint_matrix failed: %s", exc)
-        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
+        raise _server_error(exc)
 
 
 @app.get("/api/risk/chokepoints/{name}")
@@ -470,7 +538,7 @@ def get_chokepoint_detail(
         raise
     except Exception as exc:
         logger.error("get_chokepoint_detail failed: %s", exc)
-        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
+        raise _server_error(exc)
 
 
 @app.get("/api/risk/producers/{name}")
@@ -487,7 +555,7 @@ def get_producer_detail(
         raise
     except Exception as exc:
         logger.error("get_producer_detail failed: %s", exc)
-        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
+        raise _server_error(exc)
 
 
 @app.get("/api/risk/producers")
@@ -500,10 +568,10 @@ def get_producer_matrix() -> list[dict[str, Any]]:
         return compute_producer_country_risk_matrix()
     except ValueError as exc:
         logger.warning("get_producer_matrix degraded: %s", exc)
-        return [{"status": "degraded", "error": str(exc)}]
+        return [{"status": "degraded", "error": _DEGRADED}]
     except Exception as exc:
         logger.error("get_producer_matrix failed: %s", exc)
-        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
+        raise _server_error(exc)
 
 
 @app.get("/api/risk/sdi-timeline")
@@ -552,7 +620,7 @@ def get_sdi_timeline() -> list[dict[str, Any]]:
         ]
     except Exception as exc:
         logger.error("get_sdi_timeline failed: %s", exc)
-        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
+        raise _server_error(exc)
 
 @app.get("/api/market/prices")
 def get_market_prices() -> dict[str, Any]:
@@ -608,7 +676,7 @@ def get_market_prices() -> dict[str, Any]:
         }
     except Exception as exc:
         logger.error("get_market_prices failed: %s", exc)
-        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
+        raise _server_error(exc)
 
 
 @app.get("/api/market/vessels")
@@ -629,7 +697,7 @@ def get_vessels() -> list[dict[str, Any]]:
         ]
     except Exception as exc:
         logger.error("get_vessels failed: %s", exc)
-        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
+        raise _server_error(exc)
 
 
 # ── Endpoints: Configuration Lists (drive dropdowns) ─────────────────────────
@@ -641,7 +709,7 @@ def list_chokepoints() -> list[str]:
         return get_chokepoint_list()
     except Exception as exc:
         logger.error("list_chokepoints failed: %s", exc)
-        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
+        raise _server_error(exc)
 
 
 @app.get("/api/config/refineries")
@@ -651,7 +719,7 @@ def list_refineries() -> list[str]:
         return get_refinery_list()
     except Exception as exc:
         logger.error("list_refineries failed: %s", exc)
-        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
+        raise _server_error(exc)
 
 
 @app.get("/api/config/grades")
@@ -661,17 +729,18 @@ def list_grades() -> list[str]:
         return get_crude_grade_list()
     except Exception as exc:
         logger.error("list_grades failed: %s", exc)
-        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
+        raise _server_error(exc)
 
 
 # ── Endpoints: Agent Orchestration ───────────────────────────────────────────
 
 @app.post("/api/orchestrator/reroute")
-def run_reroute(req: RerouteRequest) -> dict[str, Any]:
+def run_reroute(req: RerouteRequest, request: Request) -> dict[str, Any]:
     """
     Run the 5-step Adaptive Procurement Orchestrator (Fixer Agent).
     Returns a ranked procurement matrix of alternative crude sources.
     """
+    _model_limit.check(request)
     try:
         result = find_alternatives(
             blocked_chokepoint=req.blocked_chokepoint,
@@ -698,15 +767,16 @@ def run_reroute(req: RerouteRequest) -> dict[str, Any]:
         }
     except Exception as exc:
         logger.error("run_reroute failed: %s", exc)
-        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
+        raise _server_error(exc)
 
 
 @app.post("/api/orchestrator/spr")
-def run_spr(req: SprRequest) -> dict[str, Any]:
+def run_spr(req: SprRequest, request: Request) -> dict[str, Any]:
     """
     Run the SPR burn-down model.
     Returns survival days, supply gap, demand actions, and macro impact.
     """
+    _model_limit.check(request)
     try:
         result = calculate_spr_impact(
             lead_time_days=req.lead_time_days,
@@ -732,11 +802,11 @@ def run_spr(req: SprRequest) -> dict[str, Any]:
         return {**result, "burndown_series": burndown_list}
     except Exception as exc:
         logger.error("run_spr failed: %s", exc)
-        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
+        raise _server_error(exc)
 
 
 @app.post("/api/orchestrator/war-room")
-def run_war_room(req: WarRoomRequest) -> dict[str, Any]:
+def run_war_room(req: WarRoomRequest, request: Request) -> dict[str, Any]:
     """
     Run the full War Room pipeline:
       1. Fixer Agent (reroute)
@@ -745,6 +815,7 @@ def run_war_room(req: WarRoomRequest) -> dict[str, Any]:
 
     Returns combined payload for the War Room tab.
     """
+    _war_room_limit.check(request)
     try:
         # Step 1: Reroute
         fixer_result = find_alternatives(
@@ -795,12 +866,18 @@ def run_war_room(req: WarRoomRequest) -> dict[str, Any]:
             "landed_cost_usd": "Landed Cost ($/bbl)",
             "lead_time_days":  "Lead Time (days)",
         })
-        briefing_text = generate_emergency_brief(
+        brief_key = (
+            req.scenario_name, req.blocked_chokepoint, req.destination_refinery,
+            req.disrupted_volume_mbpd, req.crude_grade, req.ranking_mode,
+            tuple(sorted(req.excluded_countries)), req.strict_grade_match,
+            req.gdp_impact_rate, req.run_rate_cut, req.industrial_cut, req.transport_cut,
+        )
+        briefing_text = _cached_brief(brief_key, lambda: generate_emergency_brief(
             scenario_name=req.scenario_name,
             target_refinery=req.destination_refinery or "Jamnagar",
             spr_data=spr,
             reroute_df=df_for_brief,
-        )
+        ))
 
         return {
             "top_routes": [
@@ -829,20 +906,23 @@ def run_war_room(req: WarRoomRequest) -> dict[str, Any]:
         raise
     except Exception as exc:
         logger.error("run_war_room failed: %s", exc)
-        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
+        raise _server_error(exc)
 
 @app.get("/api/backtest/jobs")
 def get_backtest_jobs() -> list[dict[str, Any]]:
     """Return all backtest jobs (pending, running, completed, failed)."""
     try:
-        return fetch_all_backtest_jobs()
+        return [
+            {**job, "error_log": _public_backtest_error(job.get("error_log"))}
+            for job in fetch_all_backtest_jobs()
+        ]
     except Exception as exc:
         logger.error("get_backtest_jobs failed: %s", exc)
-        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
+        raise _server_error(exc)
 
 
 @app.post("/api/backtest/trigger")
-def trigger_backtest(req: BacktestRequest) -> dict[str, Any]:
+def trigger_backtest(req: BacktestRequest, request: Request) -> dict[str, Any]:
     """Create a backtest job and start it immediately in this process.
 
     Previously this only inserted a `pending` row and the cron worker picked
@@ -851,6 +931,7 @@ def trigger_backtest(req: BacktestRequest) -> dict[str, Any]:
     backtest_dispatch. Running it here removes the poll and starts the job now
     rather than up to 30 s later.
     """
+    _backtest_limit.check(request)
     try:
         job_id = create_backtest_job(req.event_name)
         if not job_id:
@@ -860,9 +941,7 @@ def trigger_backtest(req: BacktestRequest) -> dict[str, Any]:
             # Capped for memory: concurrent backtests are what put a 512 MB
             # instance over the edge. Fail the row too, so it does not sit at
             # "pending" forever waiting for a poller that no longer exists.
-            update_backtest_job(
-                job_id, "failed", "Server busy — another backtest is already running."
-            )
+            update_backtest_job(job_id, "failed", _BACKTEST_ERRORS["busy"])
             raise HTTPException(
                 status_code=503,
                 detail="Another backtest is already running. Try again shortly.",
@@ -873,7 +952,7 @@ def trigger_backtest(req: BacktestRequest) -> dict[str, Any]:
         raise
     except Exception as exc:
         logger.error("trigger_backtest failed: %s", exc)
-        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
+        raise _server_error(exc)
 
 
 @app.get("/api/backtest/{event_name}")
@@ -1014,4 +1093,4 @@ def get_backtest(
         raise
     except Exception as exc:
         logger.error("get_backtest failed: %s", exc)
-        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR)
+        raise _server_error(exc)

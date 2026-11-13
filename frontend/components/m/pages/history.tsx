@@ -16,13 +16,9 @@ const NEWS_GAP_SDI = 35 // a day with no scored headlines lands near 20–30
 const longDate = (d?: string | null) =>
   d ? new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) : "—"
 
-/** Translate raw job errors into something a reader can act on. */
+/** The API only ever returns fixed, reader-facing failure messages. */
 function explain(job: BacktestJob): string {
-  const e = job.error_log ?? ""
-  if (e.includes("'list' object has no attribute 'get'")) return "The scorer returned events in a format the backtest didn't expect."
-  if (/quota|429|RESOURCE_EXHAUSTED/i.test(e)) return "Gemini quota ran out mid-run. Retry after the daily reset."
-  if (/busy|already running/i.test(e)) return "Another backtest was running."
-  return e ? e.slice(0, 140) : "The run stopped without an error message."
+  return job.error_log || "The run stopped without an error message."
 }
 
 export function HistoryPage() {

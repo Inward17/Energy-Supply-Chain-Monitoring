@@ -1,0 +1,15 @@
+# Cloudflare Pages response headers (applies to production and PR previews).
+#
+# CSP notes:
+#  - script/style 'unsafe-inline': the Next.js static export inlines its
+#    bootstrap scripts and the pre-paint theme script; there is no server to
+#    stamp per-request nonces. Everything else is locked to this origin.
+#  - connect-src: the Render API. Update it if NEXT_PUBLIC_API_URL changes.
+#  - img-src: CARTO and Esri basemap tiles.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.basemaps.cartocdn.com https://server.arcgisonline.com; font-src 'self'; connect-src 'self' https://energy-supply-chain-backend.onrender.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()

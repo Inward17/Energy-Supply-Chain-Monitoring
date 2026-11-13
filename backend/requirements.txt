@@ -1,18 +1,20 @@
-psycopg2-binary>=2.9.9
-SQLAlchemy>=2.0.30
-neo4j>=5.20.0
-google-genai>=0.7.0
-yfinance>=0.2.40
-pandas>=2.2.2
-numpy>=1.26.4
-websockets>=12.0
-python-dotenv>=1.0.1
-httpx>=0.27.0
-tenacity>=8.3.0
-schedule>=1.2.2
-geopy>=2.4.1
-fastapi>=0.111.0
-uvicorn>=0.30.1
-searoute>=1.3.0
-pytest>=8.0.0
-pytest-mock>=3.14.0
+# Exact pins: every deploy and CI run installs the same versions that the test
+# suite passed against. Dependabot (.github/dependabot.yml) proposes upgrades as
+# PRs, so bumps arrive through CI instead of silently at build time.
+psycopg2-binary==2.9.12
+SQLAlchemy==2.0.51
+neo4j==6.2.0
+google-genai==2.10.0
+yfinance==1.5.1
+pandas==3.0.3
+numpy==2.5.0
+websockets==16.0
+python-dotenv==1.2.2
+httpx==0.28.1
+tenacity==9.1.4
+schedule==1.2.2
+fastapi==0.139.0
+uvicorn==0.49.0
+searoute==1.6.0
+pytest==9.1.1
+pytest-mock==3.15.1

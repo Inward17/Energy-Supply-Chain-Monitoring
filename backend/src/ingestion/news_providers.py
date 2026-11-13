@@ -153,11 +153,12 @@ def fetch_newsapi() -> list[dict[str, Any]]:
         "https://newsapi.org/v2/everything",
         params={
             "q": SEARCH_TERMS,
-            "apiKey": key,
             "language": "en",
             "pageSize": 20,
             "sortBy": "publishedAt",
         },
+        # Header, not query string, so the key never appears in a logged URL.
+        headers={"X-Api-Key": key},
         timeout=_TIMEOUT,
     )
     response.raise_for_status()
@@ -215,7 +216,15 @@ def fetch_from_fallbacks() -> tuple[list[dict[str, Any]], str | None]:
             record_provider_call(provider.name)
             records = provider.fetch()
         except Exception as exc:
-            logger.warning("news_providers: %s failed - %s", provider.name, exc)
+            # str(httpx.HTTPStatusError) embeds the request URL, which carries
+            # NewsData/GNews keys as query parameters. Log type and status only.
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            logger.warning(
+                "news_providers: %s failed - %s%s",
+                provider.name,
+                type(exc).__name__,
+                f" (HTTP {status})" if status else "",
+            )
             continue
         if records:
             logger.info(
