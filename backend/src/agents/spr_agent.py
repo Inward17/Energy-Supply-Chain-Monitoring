@@ -40,6 +40,9 @@ SPR_CAPACITY_MB = round(sum(SPR_SITES.values()), 1)  # ≈ 39.1 MB
 # Days for each demand lever to reach full effect (linear ramp). Rationing
 # needs notification and enforcement; refiners can cut runs within days.
 LEVER_RAMP_DAYS = {"run_rate": 3, "industrial": 7, "transport": 14}
+# After replacement cargoes arrive, the reserve refills at this share of the
+# disrupted daily volume. A modelling assumption, not a cargo schedule.
+DEFAULT_REPLENISH_SHARE = 0.5
 # Pessimistic case: levers deliver only this share of their target.
 PESSIMISTIC_LEVER_EFFECTIVENESS = 0.5
 
@@ -106,6 +109,7 @@ def calculate_spr_impact(
     run_rate_cut: float = 0.15,
     industrial_cut: float = 0.08,
     transport_cut: float = 0.10,
+    replenish_share: float = DEFAULT_REPLENISH_SHARE,
 ) -> dict[str, Any]:
     """
     Simulate India's SPR burn-down during a supply disruption.
@@ -146,9 +150,6 @@ def calculate_spr_impact(
 
     # ── Step 3: Demand Management — can we close the gap? ───────────────────
     demand_actions: list[dict] = []
-    adjusted_shortfall = daily_shortfall
-
-    cumulative_reduction = 0.0
     demand_levers = [
         {"name": f"Refinery Run-Rate Cut ({int(run_rate_cut * 100)}%)", "reduction_pct": run_rate_cut, "cost": "Low"},
         {"name": f"Industrial Priority Scheme ({int(industrial_cut * 100)}%)",  "reduction_pct": industrial_cut, "cost": "Low"},
@@ -160,7 +161,6 @@ def calculate_spr_impact(
     for lever, ramp in zip(demand_levers, ramps):
         if lever["reduction_pct"] > 0:
             reduced_mbpd = INDIA_CONSUMPTION_MBPD * lever["reduction_pct"]
-            cumulative_reduction += reduced_mbpd
             levers.append((reduced_mbpd, ramp))
             demand_actions.append({
                 "action":      lever["name"],
@@ -178,8 +178,6 @@ def calculate_spr_impact(
                 "cost":        lever["cost"],
             })
 
-    # Steady-state shortfall once every lever is at full effect.
-    adjusted_shortfall = max(0.0, daily_shortfall - cumulative_reduction)
 
     # Survival with levers ramping in, not switched on at day 0.
     if daily_shortfall <= 0:
@@ -202,22 +200,23 @@ def calculate_spr_impact(
     current_spr     = SPR_CAPACITY_MB
     current_spr_adj = SPR_CAPACITY_MB
 
+    refill = daily_shortfall * replenish_share
+    arrival_day = int(lead_time_days)  # the day in which cargoes land
     for day in range(horizon):
-        # Baseline burn (no demand management)
-        if day < lead_time_days:
-            current_spr = max(0.0, current_spr - daily_shortfall)
+        # Share of this day before arrival: 1 before, 0 after, fractional on
+        # the arrival day itself (lead 2.5 → day 2 is half drawn, half refilled).
+        before = min(1.0, max(0.0, lead_time_days - day))
+
+        current_spr = max(0.0, current_spr - daily_shortfall * before)
+        current_spr = min(SPR_CAPACITY_MB, current_spr + refill * (1 - before))
+        if before > 0:
             status_base = "Critical" if current_spr == 0.0 else "Depleting"
         else:
-            current_spr = min(SPR_CAPACITY_MB, current_spr + daily_shortfall * 0.5)
             status_base = "Replenishing"
 
-        # Adjusted burn (with demand management levers applied)
-        if day < lead_time_days:
-            current_spr_adj = max(0.0, current_spr_adj - _managed_draw(day, daily_shortfall, levers))
-            status_adj = "Managed" if current_spr_adj > 0.0 else "Critical"
-        else:
-            current_spr_adj = min(SPR_CAPACITY_MB, current_spr_adj + adjusted_shortfall * 0.5)
-            status_adj = "Replenishing"
+        draw = _managed_draw(day, daily_shortfall, levers)
+        current_spr_adj = max(0.0, current_spr_adj - draw * before)
+        current_spr_adj = min(SPR_CAPACITY_MB, current_spr_adj + refill * (1 - before))
 
         burn_down_data.append({
             "Day":                      day,
@@ -226,7 +225,7 @@ def calculate_spr_impact(
             "SPR Capacity (MB)":       SPR_CAPACITY_MB,
             "Safe Floor (MB)":         SPR_CAPACITY_MB * 0.10,  # 10% emergency buffer
             "Status":                  status_base,
-            "Ships Arrive":            day == int(lead_time_days),
+            "Ships Arrive":            day == arrival_day,
         })
 
     df_burndown = pd.DataFrame(burn_down_data)
@@ -269,6 +268,7 @@ def calculate_spr_impact(
         "Lever savings are shares of total national demand and can overlap (a refinery run cut and fuel rationing may remove the same barrels).",
         f"Pessimistic case assumes levers deliver {PESSIMISTIC_LEVER_EFFECTIVENESS:.0%} of target.",
         "Replacement cargoes all arrive on the lead-time day; no partial deliveries before then.",
+        f"After arrival the reserve refills at {replenish_share:.0%} of the disrupted daily volume (an assumption, not a cargo schedule).",
     ]
 
     return {

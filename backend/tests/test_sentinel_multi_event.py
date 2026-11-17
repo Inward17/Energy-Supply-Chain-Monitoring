@@ -109,17 +109,20 @@ def test_single_event_parser_still_canonicalises():
 
 def test_indices_map_to_their_own_headlines():
     batch = [_row(1, "u1"), _row(2, "u2"), _row(3, "u3")]
-    assert [r["url"] for r in _rows_for_indices(batch, [1, 3])] == ["u1", "u3"]
+    rows, verified = _rows_for_indices(batch, [1, 3])
+    assert [r["url"] for r in rows] == ["u1", "u3"]
+    assert verified is True
 
 
 def test_missing_or_invalid_indices_fall_back_to_whole_batch():
     """Over-attributing provenance is recoverable; storing an event with none
     is not."""
     batch = [_row(1, "u1"), _row(2, "u2")]
-    assert len(_rows_for_indices(batch, None)) == 2
-    assert len(_rows_for_indices(batch, [])) == 2
-    assert len(_rows_for_indices(batch, [99])) == 2
-    assert len(_rows_for_indices(batch, ["x"])) == 2
+    # Fallback keeps the whole batch but flags it as context, not evidence.
+    for bad in (None, [], [99], ["x"]):
+        rows, verified = _rows_for_indices(batch, bad)
+        assert len(rows) == 2
+        assert verified is False
 
 
 # ---------------------------------------------------------------------------

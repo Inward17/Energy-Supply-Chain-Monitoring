@@ -163,7 +163,7 @@ export function ReroutePage() {
                 <span className="eyebrow text-safe">Recommended · {MODE_LABEL[mode]}</span>
                 <div className="flex flex-wrap items-end justify-between gap-3">
                   <div className="flex flex-col gap-1">
-                    <span className="text-xl font-bold text-head [font-stretch:108%] lg:text-2xl">{best.crude_grade} · {best.country}</span>
+                    <span className="text-xl font-bold text-head [font-stretch:108%] lg:text-2xl">{best.crude_grade} · {best.country}{best.sanctioned && <span className="ml-2 rounded bg-crit-soft px-1.5 py-0.5 font-mono text-[10px] text-crit-text" title="On the sanctioned-source list. A country list is not full sanctions screening.">sanctioned</span>}</span>
                     <span className="text-[13px] text-muted">{best.export_port} → {res.destination_refinery} · avoids {blocked.replace("Strait of ", "")}</span>
                   </div>
                   <span className="text-3xl font-bold text-head [font-stretch:108%] lg:text-4xl">${fmt(best.landed_cost_usd)}<span className="text-[13px] font-normal text-dim"> /bbl landed</span></span>
@@ -208,7 +208,7 @@ export function ReroutePage() {
               {rows.map((r, i) => (
                 <div key={`${r.export_port}-${r.crude_grade}`} className={`grid grid-cols-[28px_1fr_auto] items-center gap-2.5 rounded-[14px] border p-3.5 ${r.risk_score >= 0.4 ? "border-orange-line" : i === 0 ? "border-safe-line" : "border-line"} bg-panel`}>
                   <span className="font-mono text-[11px] text-faint">{String(i + 1).padStart(2, "0")}</span>
-                  <span className="flex flex-col gap-0.5"><span className="text-sm text-head">{r.crude_grade} · {r.country}</span>
+                  <span className="flex flex-col gap-0.5"><span className="text-sm text-head">{r.crude_grade} · {r.country}{r.sanctioned && <span className="ml-2 rounded bg-crit-soft px-1.5 py-0.5 font-mono text-[10px] text-crit-text" title="On the sanctioned-source list. A country list is not full sanctions screening.">sanctioned</span>}</span>
                     <span className="font-mono text-[11px]" style={{ color: riskText(r.risk_score) === "var(--x-aeb8c5)" ? "var(--x-94a0af)" : riskText(r.risk_score) }}>{r.lead_time_days.toFixed(1)} d · risk {r.risk_score.toFixed(2)}</span></span>
                   <span className="font-mono text-sm text-head">${fmt(r.landed_cost_usd)}</span>
                 </div>
@@ -228,7 +228,7 @@ export function ReroutePage() {
                   {rows.map((r, i) => (
                     <tr key={`${r.export_port}-${r.crude_grade}`} className={i === 0 ? "bg-safe-soft" : "border-t border-hair"}>
                       <td className={`px-2.5 py-3 font-mono ${i === 0 ? "text-safe" : "text-faint"}`}>{String(i + 1).padStart(2, "0")}</td>
-                      <td className={`px-2.5 py-3 ${i === 0 ? "font-semibold text-head" : "text-fg"}`}>{r.crude_grade} · {r.country}{r.match_type !== "exact" && <span className="ml-2 font-mono text-[10px] text-warn">{r.match_type}</span>}</td>
+                      <td className={`px-2.5 py-3 ${i === 0 ? "font-semibold text-head" : "text-fg"}`}>{r.crude_grade} · {r.country}{r.sanctioned && <span className="ml-2 rounded bg-crit-soft px-1.5 py-0.5 font-mono text-[10px] text-crit-text" title="On the sanctioned-source list. A country list is not full sanctions screening.">sanctioned</span>}{r.match_type !== "exact" && <span className="ml-2 font-mono text-[10px] text-warn">{r.match_type}</span>}</td>
                       <td className="px-2.5 py-3 text-muted">{r.export_port}</td>
                       <td className="px-2.5 py-3 text-right font-mono">${fmt(r.landed_cost_usd)}</td>
                       <td className="px-2.5 py-3 text-right font-mono">{r.lead_time_days.toFixed(1)} d</td>

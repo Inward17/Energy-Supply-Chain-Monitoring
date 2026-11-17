@@ -174,7 +174,10 @@ function EventBody({ e }: { e: RiskEventDetail }) {
       )}
       {e.source_urls?.length ? (
         <div className="flex flex-col gap-2">
-          <Eyebrow>Sources · {e.source_urls.length}</Eyebrow>
+          <Eyebrow>{e.sources_verified === false ? "Batch context" : "Sources"} · {e.source_urls.length}</Eyebrow>
+          {e.sources_verified === false && (
+            <p className="text-xs text-warn">The model did not link specific headlines to this event; these are all articles scored in the same batch, not direct evidence for it.</p>
+          )}
           <Links urls={e.source_urls} />
         </div>
       ) : null}

@@ -83,6 +83,8 @@ export interface RiskEvent {
   summary: string
   sdi_score: number
   source_urls?: string[]
+  /** false: sources are the whole scoring batch, not tied to this event. */
+  sources_verified?: boolean | null
   source_fetched_at?: string
   scored_at: string
 }
@@ -165,6 +167,8 @@ export interface ProcurementRow {
   lead_time_days: number
   risk_score: number
   composite_score: number
+  /** Country (or a blend leg) is on the sanctioned-source list. */
+  sanctioned?: boolean
   recommended: boolean
   top: boolean
   match_type: "exact" | "substitute" | "blend"
