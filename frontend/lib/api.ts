@@ -14,9 +14,16 @@ const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
 // ── Generic fetch helper ──────────────────────────────────────────────────────
 
-async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+// Every request is bounded: a hung fetch would otherwise keep the shared
+// refresh promise pending forever and freeze polling. 60 s still covers a
+// Render free-tier cold start; war-room waits on Gemini, so it gets longer.
+const DEFAULT_TIMEOUT_MS = 60_000
+const LLM_TIMEOUT_MS = 90_000
+
+async function apiFetch<T>(path: string, options?: RequestInit, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     headers: { "Content-Type": "application/json" },
+    signal: AbortSignal.timeout(timeoutMs),
     ...options,
   })
   if (!res.ok) {
@@ -199,7 +206,10 @@ export interface SprResult {
   supply_gap_days: number
   adjusted_gap_days: number
   adjusted_survival_days: number
-  demand_actions: { action: string; reduction: string; saves_mbpd: number; cost: string }[]
+  pessimistic_survival_days: number
+  pessimistic_gap_days: number
+  assumptions: string[]
+  demand_actions: { action: string; reduction: string; saves_mbpd: number; ramp_days: number; cost: string }[]
   recommendation: string
   status_color: "green" | "orange" | "red"
   macro_gdp_impact_pct: string
@@ -340,7 +350,7 @@ export const fetchReroute = (params: {
   blocked_chokepoint: string
   destination_refinery?: string
   crude_grade?: string
-  ranking_mode?: "cost" | "speed"
+  ranking_mode?: "cost" | "speed" | "balanced"
   excluded_countries?: string[]
   strict_grade_match?: boolean
 }) =>
@@ -379,7 +389,7 @@ export const fetchWarRoom = (params: {
   destination_refinery?: string
   disrupted_volume_mbpd: number
   crude_grade?: string
-  ranking_mode?: "cost" | "speed"
+  ranking_mode?: "cost" | "speed" | "balanced"
   excluded_countries?: string[]
   strict_grade_match?: boolean
   gdp_impact_rate_pct?: number
@@ -397,7 +407,7 @@ export const fetchWarRoom = (params: {
   return apiFetch<WarRoomResult>("/api/orchestrator/war-room", {
     method: "POST",
     body: JSON.stringify(body),
-  })
+  }, LLM_TIMEOUT_MS)
 }
 
 export interface BacktestPoint {

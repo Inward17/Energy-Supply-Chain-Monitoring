@@ -16,6 +16,8 @@ These tests ensure this regression never silently re-enters the codebase.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 from unittest.mock import patch
 
@@ -42,7 +44,8 @@ def _make_event(region: str, severity: float, confidence: float = 1.0) -> dict:
         "severity": severity,
         "confidence": confidence,
         "affected_chokepoints": [],
-        "created_at": "2026-07-10T12:00:00+00:00",
+        # Fresh: supplier risk now decays with age like the Modeler's.
+        "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
 

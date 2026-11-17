@@ -112,6 +112,10 @@ export function SprPage() {
               <span className="eyebrow text-safe">With levers</span>
               <span className="text-[28px] font-bold text-head [font-stretch:108%] lg:text-[34px]">{res.adjusted_survival_days >= 999 ? "∞" : `${res.adjusted_survival_days.toFixed(1)} d`}</span>
               <span className="text-xs text-muted">{res.adjusted_gap_days > 0 ? `${res.adjusted_gap_days.toFixed(1)} days still short` : `gap closed · bottoms at ${Math.round(minManaged)}% on day ${minAt}`}</span>
+              <span className="text-xs text-warn">
+                pessimistic: {res.pessimistic_survival_days >= 999 ? "∞" : `${res.pessimistic_survival_days.toFixed(1)} d`}
+                {res.pessimistic_gap_days > 0 ? ` · ${res.pessimistic_gap_days.toFixed(1)} d short` : ""}
+              </span>
             </div>
             <div className="panel col-span-2 flex flex-col gap-1.5 rounded-2xl p-4 lg:col-span-1 lg:p-[18px]">
               <Eyebrow>Daily shortfall</Eyebrow>
@@ -119,6 +123,13 @@ export function SprPage() {
               <span className="text-xs text-muted">of {res.india_consumption_mbpd} mbpd demand</span>
             </div>
           </section>
+
+          <Panel className="flex flex-col gap-1.5 p-4">
+            <Eyebrow>How these numbers are built</Eyebrow>
+            <ul className="list-disc space-y-1 pl-4 text-xs leading-relaxed text-muted">
+              {res.assumptions.map((a) => <li key={a}>{a}</li>)}
+            </ul>
+          </Panel>
 
           <section className="flex flex-wrap gap-4 lg:gap-5">
             <Panel as="figure" className="m-0 flex min-w-0 flex-[3_1_560px] flex-col gap-3 p-4 lg:p-[22px]">
@@ -172,7 +183,7 @@ export function SprPage() {
                 return (
                   <label key={l.key} className="flex min-h-14 items-center gap-3 rounded-xl border border-line bg-well p-3">
                     <input type="checkbox" checked={on[l.key]} onChange={(e) => setOn((p) => ({ ...p, [l.key]: e.target.checked }))} className="h-5 w-5 accent-safe" />
-                    <span className="flex flex-1 flex-col gap-0.5"><span className="text-[13px] text-head">{l.label} · {pct[l.key]}%</span><span className="text-[11px] text-dim">cost: {l.cost}</span></span>
+                    <span className="flex flex-1 flex-col gap-0.5"><span className="text-[13px] text-head">{l.label} · {pct[l.key]}%</span><span className="text-[11px] text-dim">cost: {l.cost}{act?.ramp_days ? ` · full effect after ${act.ramp_days} d` : ""}</span></span>
                     <span className="font-mono text-[13px]" style={{ color: on[l.key] ? "var(--x-3fcf8e)" : "var(--x-7a8697)" }}>{on[l.key] && act ? `−${act.saves_mbpd.toFixed(2)}` : "0.00"}</span>
                   </label>
                 )

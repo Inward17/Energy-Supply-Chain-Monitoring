@@ -23,13 +23,24 @@
   30/90/180 s backoff. Gemini 503 falls back to `GEMINI_FALLBACK_MODEL` once.
 - google-genai held at 2.x: 3.0 defaults to API v1 where `gemini-flash-latest` 404s.
 
+- SPR: site capacities (MMT × 7.33) are the source of truth; total derived
+  (39.1 MB). Levers ramp in (3/7/14 d) and a 50%-effective pessimistic case
+  is returned with an `assumptions` list the UI shows beside the result.
+- Reroute: dropdown labels "Name (Country)" are canonicalised; unknown
+  refinery → 422 (used to silently route everything to Jamnagar). Supplier
+  risk uses the Modeler's age decay. `ranking_mode=balanced` sorts by composite.
+- `CF-Connecting-IP` is safe to trust in prod: Cloudflare returns 403 to any
+  request that sets it (verified against Render, Nov 2026).
+- Frontend fetches time out (60 s, 90 s for war-room); Cloudflare builds fail
+  if `NEXT_PUBLIC_API_URL` is missing or localhost.
+
 ## Open items
 - Neon branch creation returns **HTTP 412** in CI (cause unconfirmed; CI falls
   back to a container). `continue-on-error` hides it — check the job summary.
 - No auth on the API (rate limits only). `/docs` is public.
 - SDI is capped when AIS is down (vessel weight not redistributed live).
 - Reroute options often share one landed cost/lead time (distance fallback).
-- SPR assumes a 100% full reserve; import shares are static 2024 values.
+- SPR assumes a 100% full reserve (stated in UI); import shares are static 2024 values.
 - Backtest days with no headlines score ~25 (should carry forward).
 - Logo on hold (concepts on a Claude Design canvas). Light theme not designed
   on canvas, only mapped in code. No real-device testing yet.

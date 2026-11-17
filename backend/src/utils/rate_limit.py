@@ -31,8 +31,9 @@ def client_ip(request: Request) -> str:
 
     Production sits behind Cloudflare (in front of Render), which overwrites
     CF-Connecting-IP with the real client address, so it cannot be forged by
-    the caller. X-Forwarded-For's first hop can be, which is why the global
-    window exists as a backstop.
+    the caller: Cloudflare answers 403 to requests that set it themselves
+    (verified against production). X-Forwarded-For's first hop can be forged,
+    which is why the global window exists as a backstop.
     """
     cf = request.headers.get("cf-connecting-ip")
     if cf:

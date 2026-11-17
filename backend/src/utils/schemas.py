@@ -31,7 +31,7 @@ _LIST_MAX = 50
 
 #: Ranking modes understood by fixer_agent. A `Literal` rejects anything else at
 #: the edge instead of silently falling through to the default branch.
-RankingMode = Literal["cost", "speed"]
+RankingMode = Literal["cost", "speed", "balanced"]
 
 
 class RerouteRequest(BaseModel):
