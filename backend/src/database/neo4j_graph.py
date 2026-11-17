@@ -284,23 +284,29 @@ _REFINERIES = [
 # Fallback Data (used when Neo4j is not running)
 # ---------------------------------------------------------------------------
 
-_FALLBACK_EXPORT_PORTS: dict[str, list[dict]] = {
-    "Strait of Hormuz": [
-        {"name": "Bonny Export Terminal",  "country": "Nigeria",        "grade": "Bonny Light",   "baseline_days_to_india": 22},
-        {"name": "Escravos Terminal",      "country": "Nigeria",        "grade": "Escravos",      "baseline_days_to_india": 22},
-        {"name": "Sullom Voe",             "country": "United Kingdom", "grade": "Brent",         "baseline_days_to_india": 25},
-        {"name": "Galveston/Houston",      "country": "USA",            "grade": "WTI",           "baseline_days_to_india": 30},
-        {"name": "Novorossiysk",           "country": "Russia",         "grade": "Urals",         "baseline_days_to_india": 18},
-    ],
-    "Suez Canal": [
-        {"name": "Ras Tanura",             "country": "Saudi Arabia",   "grade": "Arab Light",    "baseline_days_to_india": 10},
-        {"name": "Galveston/Houston",      "country": "USA",            "grade": "WTI",           "baseline_days_to_india": 30},
-    ],
-    "Bab-el-Mandeb": [
-        {"name": "Ras Tanura",             "country": "Saudi Arabia",   "grade": "Arab Light",    "baseline_days_to_india": 10},
-        {"name": "Bonny Export Terminal",  "country": "Nigeria",        "grade": "Bonny Light",   "baseline_days_to_india": 22},
-    ],
-}
+def _fallback_export_ports(blocked_chokepoint: str, grade: str | None = None) -> list[dict[str, Any]]:
+    """Graph-shaped rows built from the seed data, used when Neo4j is down.
+
+    Same filter and fields as the Cypher query (including coordinates), so the
+    Fixer computes real per-port routes instead of one fallback distance.
+    """
+    specs = {g["name"]: g for g in _CRUDE_GRADES}
+    rows = [
+        {
+            "name": p["name"], "country": p["country"], "grade": g,
+            "api_gravity": specs.get(g, {}).get("api_gravity"),
+            "sulphur_pct": specs.get(g, {}).get("sulphur_pct"),
+            "baseline_days_to_india": p["baseline_days_to_india"],
+            "lat": p["lat"], "lon": p["lon"], "congestion_score": None,
+            "transit_chokepoints": list(p["transit_chokepoints"]),
+        }
+        for p in _EXPORT_PORTS
+        if blocked_chokepoint not in p["transit_chokepoints"]
+        for g in p["available_grades"]
+        if grade is None or g == grade
+    ]
+    rows.sort(key=lambda r: r["baseline_days_to_india"])
+    return rows if grade else rows[:50]
 
 _FALLBACK_REFINERY_MATCHES: dict[str, list[dict]] = {
     "Arab Light":    [{"refinery": "Jamnagar (India)",          "capacity_kbd": 1240}],
@@ -607,10 +613,7 @@ def find_export_ports_bypassing(
     driver = get_driver()
     if driver is None:
         logger.warning("Neo4j unavailable — returning fallback export ports.")
-        ports = _FALLBACK_EXPORT_PORTS.get(blocked_chokepoint, [])
-        if grade:
-            ports = [p for p in ports if p.get("grade") == grade]
-        return ports
+        return _fallback_export_ports(blocked_chokepoint, grade)
 
     try:
         with driver.session() as session:
@@ -665,7 +668,7 @@ def find_export_ports_bypassing(
 
     except Exception as exc:
         logger.error("find_export_ports_bypassing failed: %s", exc)
-        return _FALLBACK_EXPORT_PORTS.get(blocked_chokepoint, [])
+        return _fallback_export_ports(blocked_chokepoint, grade)
 
 
 def match_refineries_to_crude(crude_grade: str) -> list[dict[str, Any]]:
