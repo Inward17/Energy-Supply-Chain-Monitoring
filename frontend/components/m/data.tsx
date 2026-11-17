@@ -38,9 +38,15 @@ export interface Filters {
   autoRefresh: boolean
 }
 
+export type FeedKey = keyof Snapshot
+
 interface Ctx extends Snapshot {
   loading: boolean
+  /** Live metrics failed (drives the offline banner). */
   failed: boolean
+  /** Per-feed failure on the last refresh, so a page can show an error
+   *  instead of loading forever when only its own feed fails. */
+  feedFailed: Partial<Record<FeedKey, boolean>>
   lastOk: string | null
   refresh: () => Promise<void>
   filters: Filters
@@ -60,6 +66,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [snap, setSnap] = useState<Snapshot>(EMPTY)
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState(false)
+  const [feedFailed, setFeedFailed] = useState<Partial<Record<FeedKey, boolean>>>({})
   const [lastOk, setLastOk] = useState<string | null>(null)
   const [filters, setF] = useState<Filters>({ region: "All regions", minSeverity: 0, autoRefresh: true })
   const inflight = useRef<Promise<void> | null>(null)
@@ -87,6 +94,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
         market: val(market, prev.market),
         vessels: val(vessels, prev.vessels),
       }))
+      const rej = (r: PromiseSettledResult<unknown>) => r.status === "rejected"
+      setFeedFailed({
+        live: rej(live), events: rej(events), chokepoints: rej(chokepoints), producers: rej(producers),
+        timeline: rej(timeline), market: rej(market), vessels: rej(vessels),
+      })
       const ok = live.status === "fulfilled"
       setFailed(!ok)
       if (ok) setLastOk(new Date().toISOString())
@@ -140,7 +152,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   )
 
   return (
-    <DataCtx.Provider value={{ ...snap, loading, failed, lastOk, refresh, filters, setFilters, visibleEvents }}>
+    <DataCtx.Provider value={{ ...snap, loading, failed, feedFailed, lastOk, refresh, filters, setFilters, visibleEvents }}>
       {children}
     </DataCtx.Provider>
   )
