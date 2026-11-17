@@ -17,9 +17,11 @@ Bounds are set well above any legitimate UI value: the lead-time slider tops out
 at 90 days and the exclusion list is a handful of countries.
 """
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AfterValidator, BaseModel, Field
+
+from src.utils.constants import CHOKEPOINTS_SET, canonical_chokepoint_name
 
 #: Long enough for the longest real refinery/chokepoint/grade name with room to
 #: spare, short enough that a hostile payload cannot be smuggled through.
@@ -34,8 +36,25 @@ _LIST_MAX = 50
 RankingMode = Literal["cost", "speed", "balanced"]
 
 
+def _known_chokepoint(name: str) -> str:
+    """Resolve aliases ("Hormuz") and reject anything outside the registry.
+
+    A typo must be a 422, not a valid-looking simulation built on a default
+    import share or an empty graph match.
+    """
+    canonical = canonical_chokepoint_name(name)
+    if canonical not in CHOKEPOINTS_SET:
+        raise ValueError(f"unknown chokepoint; expected one of {sorted(CHOKEPOINTS_SET)}")
+    return canonical
+
+
+ChokepointName = Annotated[
+    str, Field(min_length=1, max_length=_NAME_MAX), AfterValidator(_known_chokepoint)
+]
+
+
 class RerouteRequest(BaseModel):
-    blocked_chokepoint: str = Field(..., min_length=1, max_length=_NAME_MAX)
+    blocked_chokepoint: ChokepointName
     destination_refinery: str | None = Field(None, max_length=_NAME_MAX)
     crude_grade: str | None = Field(None, max_length=_NAME_MAX)
     ranking_mode: RankingMode = "cost"
@@ -46,7 +65,7 @@ class RerouteRequest(BaseModel):
 
 
 class SprRequest(BaseModel):
-    blocked_chokepoint: str = Field(..., min_length=1, max_length=_NAME_MAX)
+    blocked_chokepoint: ChokepointName
     # Upper bound is the simulation horizon, not a modelling opinion: the series
     # is built day by day, so this value directly sizes an allocation.
     lead_time_days: float = Field(..., ge=0.0, le=365.0)
@@ -59,7 +78,7 @@ class SprRequest(BaseModel):
 
 class WarRoomRequest(BaseModel):
     scenario_name: str = Field(..., min_length=1, max_length=_LABEL_MAX)
-    blocked_chokepoint: str = Field(..., min_length=1, max_length=_NAME_MAX)
+    blocked_chokepoint: ChokepointName
     destination_refinery: str | None = Field(None, max_length=_NAME_MAX)
     disrupted_volume_mbpd: float = Field(..., ge=0.0, le=100.0)
     crude_grade: str | None = Field(None, max_length=_NAME_MAX)
