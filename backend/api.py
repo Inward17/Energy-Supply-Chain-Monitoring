@@ -411,6 +411,7 @@ def get_risk_events(limit: int = Query(10, ge=1, le=200)) -> list[dict[str, Any]
                 "scored_at":        str(e.get("created_at", "")),
                 "source_fetched_at": str(e.get("source_fetched_at", "")),
                 "source_urls":      e.get("source_urls", []),
+                "sources_verified": e.get("sources_verified"),
             })
         return result
     except Exception as exc:
@@ -503,6 +504,7 @@ def get_risk_event_detail(event_id: int = Path(..., ge=1, le=2_147_483_647)) -> 
             "scored_at":        str(e.get("created_at", "")),
             "source_fetched_at": str(e.get("source_fetched_at", "")),
             "source_urls":      e.get("source_urls", []),
+            "sources_verified": e.get("sources_verified"),
         }
     except HTTPException:
         raise
@@ -793,6 +795,7 @@ def run_spr(req: SprRequest, request: Request) -> dict[str, Any]:
             run_rate_cut=req.run_rate_cut,
             industrial_cut=req.industrial_cut,
             transport_cut=req.transport_cut,
+            replenish_share=req.replenish_share,
         )
         # Convert burndown DataFrame to JSON-serialisable list
         burndown_df = result.pop("burndown_df", None)

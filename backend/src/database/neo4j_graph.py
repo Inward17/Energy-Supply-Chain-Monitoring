@@ -341,6 +341,10 @@ _FALLBACK_ROUTES: dict[str, list[dict]] = {
 # Graph Seeding
 # ---------------------------------------------------------------------------
 
+# Labels this app creates. Migrations may delete these and nothing else.
+APP_LABELS = ("Chokepoint", "ExportPort", "Refinery", "CrudeGrade")
+
+
 def seed_graph() -> None:
     """
     Idempotently seed the Neo4j knowledge graph.
@@ -361,9 +365,14 @@ def seed_graph() -> None:
             return
 
         if node_count > 0 and ep_count == 0:
-            # Old schema — wipe and reseed to add ExportPort nodes
-            logger.info("Neo4j has old schema without ExportPorts. Wiping and reseeding...")
-            session.run("MATCH (n) DETACH DELETE n")
+            # Old schema: remove only this app's labels before reseeding. The
+            # database may be shared, so the absence of ExportPort nodes is
+            # never permission to delete everything.
+            logger.info("Neo4j has old schema without ExportPorts. Reseeding app-owned labels...")
+            session.run(
+                "MATCH (n) WHERE any(l IN labels(n) WHERE l IN $owned) DETACH DELETE n",
+                owned=list(APP_LABELS),
+            )
 
         logger.info("Seeding Neo4j knowledge graph (chokepoints, export ports, refineries, crude grades)...")
 

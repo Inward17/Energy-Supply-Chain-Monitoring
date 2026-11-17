@@ -686,15 +686,16 @@ def _normalise_event(parsed: dict[str, Any]) -> dict[str, Any]:
 def _rows_for_indices(
     batch: list[dict[str, Any]],
     indices: Any,
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], bool]:
     """Map an event's 1-based `headline_indices` back onto the batch rows.
 
     Falls back to the whole batch when the model omits or mangles the indices,
     which keeps provenance attached (over-attributing sources is recoverable;
-    silently storing an event with none is not).
+    silently storing an event with none is not). The flag says whether the
+    rows were tied to this event by the model (True) or are batch context.
     """
     if not isinstance(indices, list):
-        return batch
+        return batch, False
     rows = []
     for raw in indices:
         try:
@@ -703,7 +704,7 @@ def _rows_for_indices(
             continue
         if 0 <= position < len(batch):
             rows.append(batch[position])
-    return rows or batch
+    return (rows, True) if rows else (batch, False)
 
 
 def _log_recent_type_distribution(limit: int = 40) -> None:
@@ -815,7 +816,7 @@ def process_unprocessed_batch(batch_size: int = 10) -> int:
         # Attribute only this incident's own headlines. Without this the whole
         # batch's URLs and timestamps would be stamped on every event, and the
         # newest headline would set the decay clock for an older incident.
-        rows_for_event = _rows_for_indices(batch, scored.get("headline_indices"))
+        rows_for_event, sources_verified = _rows_for_indices(batch, scored.get("headline_indices"))
 
         severity = float(scored.get("severity", 0.0) or 0.0)
         disruption_type = str(scored.get("disruption_type", "unknown") or "unknown")
@@ -846,6 +847,7 @@ def process_unprocessed_batch(batch_size: int = 10) -> int:
             **scored,
             "sdi_score": sdi,
             "source_urls": [r["url"] for r in rows_for_event if r.get("url")],
+            "sources_verified": sources_verified,
             "source_fetched_at": max(fetched_times, default=None),
             "article_category": dominant_category,
         }

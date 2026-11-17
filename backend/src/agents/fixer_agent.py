@@ -286,6 +286,11 @@ def canonical_refinery(name: str) -> str:
     return name.strip()
 
 
+def _is_sanctioned(country: str) -> bool:
+    """True if the country (or any leg of a blend "A + B") is on the list."""
+    return any(part.strip() in SANCTIONED_SOURCE_COUNTRIES for part in country.split("+"))
+
+
 def _country_risk(country: str, events: list[dict[str, Any]], now: datetime) -> float:
     """Worst single matching event, decayed by age exactly as the Modeler does.
 
@@ -600,6 +605,11 @@ def find_alternatives(
             "congestion_score":   congestion_score,
             "composite_score":    comp,
             "extra_detour_days":  extra_detour,
+            # Labelled, not filtered: exclusions stay the user's choice, but a
+            # sanctioned supplier is never shown without saying so. A country
+            # list is not sanctions screening (entity, vessel and jurisdiction
+            # rules apply too).
+            "sanctioned":         _is_sanctioned(country),
             "route_basis":        route_basis,
             "recommended":        False,
             "match_type":         match_type,

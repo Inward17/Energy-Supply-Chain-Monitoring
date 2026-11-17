@@ -225,6 +225,9 @@ def init_schema() -> None:
         "ALTER TABLE backtest_jobs ADD COLUMN IF NOT EXISTS progress_note TEXT",
         # Safely add source_urls column to existing DBs
         "ALTER TABLE risk_events ADD COLUMN IF NOT EXISTS source_urls TEXT[]",
+        # FALSE when the sources are the whole scoring batch (model gave no
+        # usable headline indices); NULL for rows written before this column.
+        "ALTER TABLE risk_events ADD COLUMN IF NOT EXISTS sources_verified BOOLEAN",
         # Safely add producer countries to existing DBs
         "ALTER TABLE risk_events ADD COLUMN IF NOT EXISTS affected_producer_countries TEXT[]",
         "ALTER TABLE risk_events_backtest ADD COLUMN IF NOT EXISTS affected_producer_countries TEXT[]",
@@ -718,11 +721,11 @@ def upsert_risk_event(event: dict[str, Any]) -> None:
                 INSERT INTO risk_events
                     (region, disruption_type, severity, affected_chokepoints, directly_affected_chokepoints, affected_producer_countries,
                      directly_affected_producer_countries, confidence, summary, sdi_score, source_urls,
-                     source_fetched_at, severity_reasoning, article_category)
+                     sources_verified, source_fetched_at, severity_reasoning, article_category)
                 VALUES
                     (:region, :disruption_type, :severity, :affected_chokepoints, :directly_affected_chokepoints, :affected_producer_countries,
                      :directly_affected_producer_countries, :confidence, :summary, :sdi_score, :source_urls,
-                     :source_fetched_at, :severity_reasoning, :article_category)
+                     :sources_verified, :source_fetched_at, :severity_reasoning, :article_category)
             """)
             conn.execute(
                 stmt,
@@ -740,6 +743,7 @@ def upsert_risk_event(event: dict[str, Any]) -> None:
                     "summary":              event.get("summary", ""),
                     "sdi_score":            event.get("sdi_score", 0.0),
                     "source_urls":          event.get("source_urls", []),
+                    "sources_verified":     event.get("sources_verified"),
                     "source_fetched_at":    event.get("source_fetched_at"),
                     "severity_reasoning":   event.get("severity_reasoning", ""),
                     "article_category":     event.get("article_category", "general"),
@@ -756,7 +760,7 @@ def fetch_risk_events(limit: int = 50) -> list[dict[str, Any]]:
             rows = conn.execute(
                 text(
                     "SELECT id, region, disruption_type, severity, affected_chokepoints, directly_affected_chokepoints, affected_producer_countries, "
-                    "directly_affected_producer_countries, confidence, summary, sdi_score, source_urls, "
+                    "directly_affected_producer_countries, confidence, summary, sdi_score, source_urls, sources_verified, "
                     "source_fetched_at, severity_reasoning, created_at "
                     "FROM risk_events ORDER BY created_at DESC LIMIT :lim"
                 ),
@@ -775,7 +779,7 @@ def fetch_risk_event(event_id: int) -> dict[str, Any] | None:
                 text(
                     "SELECT id, region, disruption_type, severity, affected_chokepoints, directly_affected_chokepoints, "
                     "affected_producer_countries, directly_affected_producer_countries, confidence, summary, "
-                    "sdi_score, source_urls, source_fetched_at, severity_reasoning, created_at "
+                    "sdi_score, source_urls, sources_verified, source_fetched_at, severity_reasoning, created_at "
                     "FROM risk_events WHERE id = :event_id"
                 ),
                 {"event_id": event_id},

@@ -34,6 +34,16 @@
 - Frontend fetches time out (60 s, 90 s for war-room); Cloudflare builds fail
   if `NEXT_PUBLIC_API_URL` is missing or localhost.
 
+- Neo4j old-schema migration deletes only APP_LABELS (Chokepoint, ExportPort,
+  Refinery, CrudeGrade) — the database may be shared.
+- SPR arrival day is fractional (draw and refill split on the arrival day);
+  refill rate `replenish_share` (default 50% of disrupted volume) is a request
+  field and listed in assumptions.
+- risk_events.sources_verified: FALSE when Sentinel fell back to the whole
+  batch; UI labels those links "Batch context".
+- Sanctioned suppliers are labelled (`sanctioned` on reroute rows), not
+  filtered server-side: exclusions stay a user choice; a country list is not
+  sanctions screening.
 - Reroute lead times come from the route that avoids the blocked passage
   (searoute restriction) whenever one exists; rows carry `route_basis`
   verified / unverified (no restriction: Malacca, Cape, LOOP → static detour) /
