@@ -48,20 +48,20 @@ def test_oversized_strings_are_rejected():
 
 def test_oversized_lists_are_rejected():
     with pytest.raises(ValidationError):
-        RerouteRequest(blocked_chokepoint="A", excluded_countries=["x"] * 100_000)
+        RerouteRequest(blocked_chokepoint="Strait of Hormuz", excluded_countries=["x"] * 100_000)
 
 
 def test_ranking_mode_is_an_enum():
     """An unrecognised mode previously fell through to the default branch."""
     with pytest.raises(ValidationError):
-        RerouteRequest(blocked_chokepoint="A", ranking_mode="not-a-real-mode")
-    assert RerouteRequest(blocked_chokepoint="A", ranking_mode="speed").ranking_mode == "speed"
+        RerouteRequest(blocked_chokepoint="Strait of Hormuz", ranking_mode="not-a-real-mode")
+    assert RerouteRequest(blocked_chokepoint="Strait of Hormuz", ranking_mode="speed").ranking_mode == "speed"
 
 
 def test_war_room_volume_is_bounded():
     with pytest.raises(ValidationError):
         WarRoomRequest(
-            scenario_name="S", blocked_chokepoint="A", disrupted_volume_mbpd=1e12
+            scenario_name="S", blocked_chokepoint="Strait of Hormuz", disrupted_volume_mbpd=1e12
         )
 
 
