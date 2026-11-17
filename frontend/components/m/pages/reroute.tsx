@@ -7,6 +7,14 @@ import { Bar, ErrorNote, Eyebrow, Panel, Segmented, fmt, riskColor, riskText } f
 export const DEFAULT_EXCLUDED = ["Russia", "Iran", "Venezuela", "Syria"]
 
 // What decides the top row, so "Recommended" never implies more than it is.
+// Only claim the route avoids the blockade when the route engine proved it.
+function routeNote(basis: string | undefined, blocked: string): string {
+  const short = blocked.replace("Strait of ", "")
+  if (basis === "unverified") return `route not verified to avoid ${short} · static detour added`
+  if (basis === "estimated") return "no port coordinates · lead time estimated"
+  return `avoids ${short}`
+}
+
 const MODE_LABEL = { cost: "cheapest landed", speed: "fastest arrival", balanced: "best composite (cost, time, risk, congestion)" } as const
 
 export function useConfig() {
@@ -164,7 +172,7 @@ export function ReroutePage() {
                 <div className="flex flex-wrap items-end justify-between gap-3">
                   <div className="flex flex-col gap-1">
                     <span className="text-xl font-bold text-head [font-stretch:108%] lg:text-2xl">{best.crude_grade} · {best.country}{best.sanctioned && <span className="ml-2 rounded bg-crit-soft px-1.5 py-0.5 font-mono text-[10px] text-crit-text" title="On the sanctioned-source list. A country list is not full sanctions screening.">sanctioned</span>}</span>
-                    <span className="text-[13px] text-muted">{best.export_port} → {res.destination_refinery} · avoids {blocked.replace("Strait of ", "")}</span>
+                    <span className="text-[13px] text-muted">{best.export_port} → {res.destination_refinery} · {routeNote(best.route_basis, blocked)}</span>
                   </div>
                   <span className="text-3xl font-bold text-head [font-stretch:108%] lg:text-4xl">${fmt(best.landed_cost_usd)}<span className="text-[13px] font-normal text-dim"> /bbl landed</span></span>
                 </div>
@@ -209,7 +217,8 @@ export function ReroutePage() {
                 <div key={`${r.export_port}-${r.crude_grade}`} className={`grid grid-cols-[28px_1fr_auto] items-center gap-2.5 rounded-[14px] border p-3.5 ${r.risk_score >= 0.4 ? "border-orange-line" : i === 0 ? "border-safe-line" : "border-line"} bg-panel`}>
                   <span className="font-mono text-[11px] text-faint">{String(i + 1).padStart(2, "0")}</span>
                   <span className="flex flex-col gap-0.5"><span className="text-sm text-head">{r.crude_grade} · {r.country}{r.sanctioned && <span className="ml-2 rounded bg-crit-soft px-1.5 py-0.5 font-mono text-[10px] text-crit-text" title="On the sanctioned-source list. A country list is not full sanctions screening.">sanctioned</span>}</span>
-                    <span className="font-mono text-[11px]" style={{ color: riskText(r.risk_score) === "var(--x-aeb8c5)" ? "var(--x-94a0af)" : riskText(r.risk_score) }}>{r.lead_time_days.toFixed(1)} d · risk {r.risk_score.toFixed(2)}</span></span>
+                    <span className="font-mono text-[11px]" style={{ color: riskText(r.risk_score) === "var(--x-aeb8c5)" ? "var(--x-94a0af)" : riskText(r.risk_score) }}>{r.lead_time_days.toFixed(1)} d · risk {r.risk_score.toFixed(2)}</span>
+                    {r.route_basis && r.route_basis !== "verified" && <span className="text-[11px] text-warn">route {r.route_basis}</span>}</span>
                   <span className="font-mono text-sm text-head">${fmt(r.landed_cost_usd)}</span>
                 </div>
               ))}
@@ -229,7 +238,7 @@ export function ReroutePage() {
                     <tr key={`${r.export_port}-${r.crude_grade}`} className={i === 0 ? "bg-safe-soft" : "border-t border-hair"}>
                       <td className={`px-2.5 py-3 font-mono ${i === 0 ? "text-safe" : "text-faint"}`}>{String(i + 1).padStart(2, "0")}</td>
                       <td className={`px-2.5 py-3 ${i === 0 ? "font-semibold text-head" : "text-fg"}`}>{r.crude_grade} · {r.country}{r.sanctioned && <span className="ml-2 rounded bg-crit-soft px-1.5 py-0.5 font-mono text-[10px] text-crit-text" title="On the sanctioned-source list. A country list is not full sanctions screening.">sanctioned</span>}{r.match_type !== "exact" && <span className="ml-2 font-mono text-[10px] text-warn">{r.match_type}</span>}</td>
-                      <td className="px-2.5 py-3 text-muted">{r.export_port}</td>
+                      <td className="px-2.5 py-3 text-muted">{r.export_port}{r.route_basis && r.route_basis !== "verified" && <span className="ml-1.5 text-[11px] text-warn" title={routeNote(r.route_basis, blocked)}>· {r.route_basis}</span>}</td>
                       <td className="px-2.5 py-3 text-right font-mono">${fmt(r.landed_cost_usd)}</td>
                       <td className="px-2.5 py-3 text-right font-mono">{r.lead_time_days.toFixed(1)} d</td>
                       <td className="px-2.5 py-3"><span className="flex items-center gap-2"><span className="w-20"><Bar value={r.risk_score} color={riskColor(r.risk_score)} /></span><span className="font-mono" style={{ color: riskText(r.risk_score) }}>{dot(r.risk_score)}</span></span></td>

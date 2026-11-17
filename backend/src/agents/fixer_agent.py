@@ -168,62 +168,72 @@ def get_conditional_detour(blocked_chokepoint: str, port_transit_chokepoints: li
 # Step 4 Helper: Lead Time via Marine Routing — Bug Fix #1
 # ---------------------------------------------------------------------------
 
-def _compute_lead_time(
+def _sea_km(port_lon: float, port_lat: float, dest_lon: float, dest_lat: float, restriction: str | None = None) -> float:
+    """searoute distance in km ([lon, lat] order). Raises if no route exists."""
+    kwargs = {"restrictions": ["northwest", restriction]} if restriction else {}
+    route = sr.searoute([port_lon, port_lat], [dest_lon, dest_lat], units="km", **kwargs)
+    return float(route["properties"]["length"])
+
+
+def _haversine_km(port_lon: float, port_lat: float, dest_lon: float, dest_lat: float) -> float:
+    from math import asin, cos, radians, sin, sqrt
+    lat1, lat2 = radians(port_lat), radians(dest_lat)
+    a = sin(radians(dest_lat - port_lat) / 2) ** 2 + cos(lat1) * cos(lat2) * sin(radians(dest_lon - port_lon) / 2) ** 2
+    return 2 * 6371 * asin(sqrt(a))
+
+
+# Route basis, best to worst. A blend takes its worst leg.
+ROUTE_BASIS_RANK = {"verified": 0, "unverified": 1, "estimated": 2}
+
+
+def _route_lead_time(
     port_lon: float,
     port_lat: float,
     dest_lon: float,
     dest_lat: float,
     extra_detour_days: float = 0,
     blocked_chokepoint: str | None = None,
-) -> float:
+) -> tuple[float, str]:
+    """Voyage days for the route that actually avoids the blocked passage.
+
+    The graph only says whether a terminal's *India* route crosses the
+    blockade; the route to another destination can differ (Ras Tanura ->
+    Rotterdam goes through Suez). So whenever the route engine can restrict
+    the blocked passage, the restricted route IS the route -- regardless of
+    the static detour table (Hormuz's is 0) -- and the result is "verified".
+    Otherwise the unrestricted route plus the static detour is "unverified".
     """
-    Calculate total voyage lead time using searoute marine routing.
-
-    searoute traces actual sea lanes (avoids land), preventing the
-    'Flying Ship Bug' where geopy would route Novorossiysk → Rotterdam
-    straight over Ukraine. IMPORTANT: searoute takes [lon, lat] order.
-
-    When supported by ``searoute``, an affected passage is restricted and the
-    actual additional nautical miles are used. Static detour days remain a
-    fallback for passages the route engine cannot restrict.
-    """
-    try:
-        route = sr.searoute([port_lon, port_lat], [dest_lon, dest_lat], units="km")
-        dist_km = route["properties"]["length"]
-    except Exception as exc:
-        # Graceful fallback to straight-line if searoute fails (e.g. same port as dest)
-        logger.debug("searoute failed (%s) — using haversine fallback", exc)
-        from math import radians, cos, sin, asin, sqrt
-        lat1, lat2 = radians(port_lat), radians(dest_lat)
-        dlon = radians(dest_lon - port_lon)
-        dlat = radians(dest_lat - port_lat)
-        a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
-        dist_km = 2 * 6371 * asin(sqrt(a))
-    fallback_detour_days = extra_detour_days
-
     restriction = _SEAROUTE_RESTRICTIONS.get(blocked_chokepoint or "")
-    if dist_km and extra_detour_days > 0 and restriction:
+    if restriction:
         try:
-            detour_route = sr.searoute(
-                [port_lon, port_lat],
-                [dest_lon, dest_lat],
-                units="km",
-                restrictions=["northwest", restriction],
-            )
-            detour_km = detour_route["properties"]["length"]
-            if detour_km > dist_km:
-                dist_km = detour_km
-                fallback_detour_days = 0
-        except Exception as exc:
-            logger.debug(
-                "searoute restriction '%s' failed (%s) — using static detour fallback",
-                restriction,
-                exc,
-            )
+            km = _sea_km(port_lon, port_lat, dest_lon, dest_lat, restriction)
+            return round(km / _KM_PER_NM / NAUTICAL_MILES_PER_DAY, 1), "verified"
+        except Exception as exc:  # no path around the blockade, or engine error
+            logger.debug("searoute restriction '%s' failed (%s)", restriction, exc)
 
-    dist_nm = dist_km / _KM_PER_NM
-    base_days = dist_nm / NAUTICAL_MILES_PER_DAY
-    return round(base_days + fallback_detour_days, 1)
+    try:
+        km = _sea_km(port_lon, port_lat, dest_lon, dest_lat)
+    except Exception as exc:
+        # Straight-line fallback if searoute fails (e.g. same port as dest)
+        logger.debug("searoute failed (%s) - using haversine fallback", exc)
+        km = _haversine_km(port_lon, port_lat, dest_lon, dest_lat)
+    days = km / _KM_PER_NM / NAUTICAL_MILES_PER_DAY + extra_detour_days
+    # With no blockade there is nothing to verify.
+    return round(days, 1), ("verified" if not blocked_chokepoint else "unverified")
+
+
+def _compute_lead_time(*args: Any, **kwargs: Any) -> float:
+    """Lead time only; see _route_lead_time for the route basis."""
+    return _route_lead_time(*args, **kwargs)[0]
+
+
+def _estimated_lead_time(port: dict[str, Any], dest_country: str | None, extra_detour: float) -> float:
+    """No coordinates: use the port's own India baseline when shipping to India,
+    else the generic fallback distance. Labelled "estimated" by the caller."""
+    baseline = port.get("baseline_days_to_india")
+    if baseline is not None and (dest_country or "").lower() == "india":
+        return round(float(baseline) + extra_detour, 1)
+    return round(FIXER_FALLBACK_DISTANCE_NM / NAUTICAL_MILES_PER_DAY + extra_detour, 1)
 
 
 # ---------------------------------------------------------------------------
@@ -331,6 +341,7 @@ def find_alternatives(
         raise UnknownRefinery(dest_name)
     dest_lat = dest_coords["lat"]
     dest_lon = dest_coords["lon"]
+    dest_country = dest_coords.get("country")
 
     logger.info(
         "fixer_agent: START — chokepoint='%s'  grade='%s'  mode='%s'  dest='%s' (%.2f, %.2f)",
@@ -493,6 +504,7 @@ def find_alternatives(
             blend_lead_time = 0.0
             blend_risk_score = 0.0
             blend_extra_detour = 0.0
+            blend_basis = "verified"
             blend_congestion_scores: list[float] = []
 
             for comp in components:
@@ -502,17 +514,17 @@ def find_alternatives(
                 c_transits = c_port.get("transit_chokepoints") or []
                 c_detour = get_conditional_detour(blocked_chokepoint, c_transits)
 
-                c_lat = c_port.get("lat") or 0.0
-                c_lon = c_port.get("lon") or 0.0
-                if c_lat and c_lon:
-                    c_time = _compute_lead_time(
+                c_lat, c_lon = c_port.get("lat"), c_port.get("lon")
+                if c_lat is not None and c_lon is not None:
+                    c_time, c_basis = _route_lead_time(
                         port_lon=c_lon, port_lat=c_lat,
                         dest_lon=dest_lon, dest_lat=dest_lat,
                         extra_detour_days=c_detour,
                         blocked_chokepoint=blocked_chokepoint,
                     )
                 else:
-                    c_time = round(FIXER_FALLBACK_DISTANCE_NM / NAUTICAL_MILES_PER_DAY + c_detour, 1)
+                    c_time, c_basis = _estimated_lead_time(c_port, dest_country, c_detour), "estimated"
+                blend_basis = max(blend_basis, c_basis, key=ROUTE_BASIS_RANK.__getitem__)
 
                 c_freight = _compute_freight_premium(
                     voyage_days=c_time,
@@ -540,6 +552,7 @@ def find_alternatives(
             risk_score = blend_risk_score
             congestion_score = _worst_blend_congestion(blend_congestion_scores)
             extra_detour = blend_extra_detour
+            route_basis = blend_basis
             freight_prem = round(landed_cost - current_brent, 2)
         else:
             # Missing or unmapped congestion data defaults to 0.5 (neutral)
@@ -550,18 +563,17 @@ def find_alternatives(
             extra_detour = get_conditional_detour(blocked_chokepoint, port_transits)
 
             # Step 4 — Lead time (searoute marine distance port -> destination)
-            port_lat = port.get("lat") or 0.0
-            port_lon = port.get("lon") or 0.0
-            if port_lat and port_lon:
-                lead_time = _compute_lead_time(
+            # 0 is a valid latitude/longitude, so test for None explicitly.
+            port_lat, port_lon = port.get("lat"), port.get("lon")
+            if port_lat is not None and port_lon is not None:
+                lead_time, route_basis = _route_lead_time(
                     port_lon=port_lon, port_lat=port_lat,
                     dest_lon=dest_lon, dest_lat=dest_lat,
                     extra_detour_days=extra_detour,
                     blocked_chokepoint=blocked_chokepoint,
                 )
             else:
-                # Fallback for ports without coordinates
-                lead_time = round(FIXER_FALLBACK_DISTANCE_NM / NAUTICAL_MILES_PER_DAY + extra_detour, 1)
+                lead_time, route_basis = _estimated_lead_time(port, dest_country, extra_detour), "estimated"
 
             # Step 3b — Financial math (freight premium based on total lead time)
             freight_prem = _compute_freight_premium(
@@ -598,6 +610,7 @@ def find_alternatives(
             # list is not sanctions screening (entity, vessel and jurisdiction
             # rules apply too).
             "sanctioned":         _is_sanctioned(country),
+            "route_basis":        route_basis,
             "recommended":        False,
             "match_type":         match_type,
             "match_reason":       match_reason,

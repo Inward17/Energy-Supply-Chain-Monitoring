@@ -63,7 +63,7 @@ def _run_with_mocks(viable_ports, all_events, brent=75.0):
         patch("src.agents.fixer_agent.match_refineries_to_crude", return_value=[]),
         patch("src.agents.fixer_agent.get_grade_suppliers", return_value=[]),
         patch("src.agents.fixer_agent.get_crude_specs", return_value=None),
-        patch("src.agents.fixer_agent._compute_lead_time", return_value=15.0),
+        patch("src.agents.fixer_agent._route_lead_time", return_value=(15.0, "verified")),
     ):
         return find_alternatives(blocked_chokepoint="Suez Canal")
 

@@ -169,6 +169,9 @@ export interface ProcurementRow {
   composite_score: number
   /** Country (or a blend leg) is on the sanctioned-source list. */
   sanctioned?: boolean
+  /** verified: route engine avoided the blocked passage; unverified: static detour;
+   *  estimated: no coordinates, fallback distance. */
+  route_basis?: "verified" | "unverified" | "estimated"
   recommended: boolean
   top: boolean
   match_type: "exact" | "substitute" | "blend"

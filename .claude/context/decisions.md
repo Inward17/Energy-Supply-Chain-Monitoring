@@ -44,6 +44,11 @@
 - Sanctioned suppliers are labelled (`sanctioned` on reroute rows), not
   filtered server-side: exclusions stay a user choice; a country list is not
   sanctions screening.
+- Reroute lead times come from the route that avoids the blocked passage
+  (searoute restriction) whenever one exists; rows carry `route_basis`
+  verified / unverified (no restriction: Malacca, Cape, LOOP → static detour) /
+  estimated (no coordinates). Neo4j-down fallback is built from seed ports, so
+  it has coordinates and real per-port routes.
 
 ## Open items
 - Neon branch creation returns **HTTP 412** in CI (cause unconfirmed; CI falls
