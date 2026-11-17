@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { fetchBacktest, fetchBacktestJobs, triggerBacktest, type BacktestJob, type BacktestResult } from "@/lib/api"
 import { LineChart } from "../charts"
 import { ErrorNote, Eyebrow, Loading, Panel } from "../ui"
@@ -29,13 +29,17 @@ export function HistoryPage() {
   const [loading, setLoading] = useState(false)
   const [triggering, setTriggering] = useState(false)
 
+  // Switching events quickly must not let an older response win.
+  const current = useRef("")
   const load = useCallback((id: string) => {
+    current.current = id
     setLoading(true)
     setErr(null)
+    setRes(null)
     fetchBacktest(id)
-      .then(setRes)
-      .catch(() => { setRes(null); setErr("No completed backtest for this event yet.") })
-      .finally(() => setLoading(false))
+      .then((r) => { if (current.current === id) setRes(r) })
+      .catch(() => { if (current.current === id) setErr("No completed backtest for this event yet.") })
+      .finally(() => { if (current.current === id) setLoading(false) })
   }, [])
 
   useEffect(() => load(sel), [sel, load])

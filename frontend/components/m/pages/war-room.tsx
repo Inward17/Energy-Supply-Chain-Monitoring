@@ -23,7 +23,7 @@ export function WarRoomPage() {
   const [excluded, setExcluded] = useState<string[]>(DEFAULT_EXCLUDED)
   const [levers, setLevers] = useState({ run: 15, ind: 8, trans: 10 })
   const [edit, setEdit] = useState(false)
-  const [facts, setFacts] = useState<{ reroute: RerouteResult; spr: SprResult; top?: ProcurementRow } | null>(null)
+  const [facts, setFacts] = useState<{ reroute: RerouteResult; spr: SprResult | null; top?: ProcurementRow } | null>(null)
   const [ai, setAi] = useState<WarRoomResult | null>(null)
   const [aiState, setAiState] = useState<"idle" | "pending" | "done" | "failed">("idle")
   const [busy, setBusy] = useState(false)
@@ -41,9 +41,16 @@ export function WarRoomPage() {
     try {
       const reroute = await fetchReroute({ blocked_chokepoint: sc.chokepoint, ...common })
       const top = reroute.procurement_matrix[0]
+      if (!top) {
+        // No replacement supply: the arrival date is unknown, so don't
+        // simulate the reserve against an invented 30-day lead time.
+        setFacts({ reroute, spr: null })
+        setBusy(false)
+        return
+      }
       const spr = await fetchSpr({
         blocked_chokepoint: sc.chokepoint,
-        lead_time_days: Math.max(1, Math.round(top?.lead_time_days ?? 30)),
+        lead_time_days: Math.max(1, Math.round(top.lead_time_days)),
         disrupted_volume_mbpd: sc.volume,
         run_rate_cut_pct: levers.run,
         industrial_cut_pct: levers.ind,
@@ -144,6 +151,14 @@ export function WarRoomPage() {
 
       {err && <ErrorNote message={err} onRetry={() => void simulate()} />}
       {!facts && !busy && !err && <Panel className="p-6 text-sm text-dim">Pick a scenario and press Simulate. The brief appears as soon as the models finish; the AI narrative follows.</Panel>}
+
+      {facts && !s && (
+        <Panel className="flex flex-col gap-2 p-6">
+          <span className="text-[15px] font-bold text-head">No replacement route</span>
+          <p className="text-sm text-fg">{facts.reroute.diagnostic?.message ?? `No alternative supply avoids ${sc.chokepoint} under these constraints.`}</p>
+          <p className="text-xs text-muted">Replacement arrival time is unknown, so reserve survival is not simulated. Loosen the country exclusions and try again.</p>
+        </Panel>
+      )}
 
       {facts && s && (
         <section aria-labelledby="brief-h" className="flex flex-wrap gap-4 lg:gap-5">
