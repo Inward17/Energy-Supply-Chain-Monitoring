@@ -356,7 +356,7 @@ def get_live_metrics() -> dict[str, Any]:
         }
     except ValueError as exc:
         logger.warning("get_live_metrics degraded: %s", exc)
-        return {"status": "degraded", "error": _DEGRADED}
+        raise HTTPException(status_code=503, detail=_DEGRADED)
     except Exception as exc:
         logger.error("get_live_metrics failed: %s", exc)
         raise _server_error(exc)
@@ -520,8 +520,9 @@ def get_chokepoint_matrix() -> list[dict[str, Any]]:
     try:
         return compute_chokepoint_risk_matrix()
     except ValueError as exc:
+        # A failure is a 503, not a malformed row inside a 200 array.
         logger.warning("get_chokepoint_matrix degraded: %s", exc)
-        return [{"status": "degraded", "error": _DEGRADED}]
+        raise HTTPException(status_code=503, detail=_DEGRADED)
     except Exception as exc:
         logger.error("get_chokepoint_matrix failed: %s", exc)
         raise _server_error(exc)
@@ -571,7 +572,7 @@ def get_producer_matrix() -> list[dict[str, Any]]:
         return compute_producer_country_risk_matrix()
     except ValueError as exc:
         logger.warning("get_producer_matrix degraded: %s", exc)
-        return [{"status": "degraded", "error": _DEGRADED}]
+        raise HTTPException(status_code=503, detail=_DEGRADED)
     except Exception as exc:
         logger.error("get_producer_matrix failed: %s", exc)
         raise _server_error(exc)
@@ -654,6 +655,7 @@ def get_market_prices() -> dict[str, Any]:
                 close_prices = [float(r.get("price_close", 0) or 0) for r in rows]
                 summaries.append({
                     "ticker":     t,
+                    "available":  True,
                     "price":      round(float(latest.get("price_close", 0) or 0), 2),
                     "high_52w":   round(max(close_prices) if close_prices else 0, 2),
                     "low_52w":    round(min(close_prices) if close_prices else 0, 2),
@@ -668,7 +670,9 @@ def get_market_prices() -> dict[str, Any]:
                     ],
                 })
             else:
-                summaries.append({"ticker": t, "price": 0, "high_52w": 0, "low_52w": 0, "volume": 0, "series": []})
+                # No observations: null, not 0, so the UI never shows a $0.00 price.
+                summaries.append({"ticker": t, "available": False, "price": None,
+                                  "high_52w": None, "low_52w": None, "volume": None, "series": []})
 
         brent_stats = get_brent_rolling_stats()
         return {
