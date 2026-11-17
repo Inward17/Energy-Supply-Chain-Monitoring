@@ -197,7 +197,7 @@ export function Overview({ go, openHealth }: { go: (p: PageKey) => void; openHea
                 className={`flex flex-col items-center gap-2 rounded-xl border px-2 py-3.5 ${i === 0 && c.risk_score >= 0.4 ? "border-orange-line bg-orange-soft" : "border-hair bg-well"}`}
               >
                 <Ring value={c.risk_score} />
-                <span className={`text-center text-xs ${i === 0 ? "font-semibold text-head" : "text-fg"}`}>{c.name.replace("Strait of ", "").replace("Canal", "Canal")}</span>
+                <span className={`text-center text-xs ${i === 0 ? "font-semibold text-head" : "text-fg"}`}>{c.name.replace("Strait of ", "")}</span>
                 <span className="font-mono text-[10px] text-dim">{c.flow_mb_day.toFixed(1)} mbpd</span>
               </button>
             ))}
