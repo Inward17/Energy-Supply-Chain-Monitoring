@@ -21,11 +21,37 @@ export function Overview({ go, openHealth }: { go: (p: PageKey) => void; openHea
 
   if (loading && !live) return <Loading label="Loading snapshot…" />
   if (!live) {
+    // Live metrics feed the SDI hero only; show whatever else did load.
+    const ranked = [...chokepoints].sort((a, b) => b.risk_score - a.risk_score).slice(0, 5)
     return (
-      <Panel className="p-6">
-        <p className="text-sm text-fg">The backend did not answer, so there is nothing to show yet.</p>
-        <button type="button" onClick={openHealth} className="mt-3 text-sm font-semibold text-accent">Open data health →</button>
-      </Panel>
+      <div className="flex flex-col gap-4">
+        <Panel className="p-6">
+          <p className="text-sm text-fg">The SDI snapshot did not load{ranked.length || events.length ? ", so the index is hidden. Other feeds below are still current." : ", and no other feed answered either."}</p>
+          <button type="button" onClick={openHealth} className="mt-3 text-sm font-semibold text-accent">Open data health →</button>
+        </Panel>
+        {ranked.length > 0 && (
+          <Panel className="flex flex-col gap-2 p-5">
+            <Eyebrow>Chokepoint risk</Eyebrow>
+            {ranked.map((c) => (
+              <button key={c.name} type="button" onClick={() => open({ kind: "chokepoint", name: c.name })} className="flex items-center justify-between gap-3 text-left text-[13px]">
+                <span className="text-fg">{c.name}</span>
+                <span className="font-mono text-muted">{fmt(c.risk_score)}</span>
+              </button>
+            ))}
+          </Panel>
+        )}
+        {events.length > 0 && (
+          <Panel className="flex flex-col gap-2 p-5">
+            <Eyebrow>Latest events</Eyebrow>
+            {events.slice(0, 3).map((e) => (
+              <button key={e.id} type="button" onClick={() => go("risk")} className="flex items-center gap-3 text-left text-[13px]">
+                <SevChip v={e.severity} />
+                <span className="line-clamp-1 text-fg">{e.summary}</span>
+              </button>
+            ))}
+          </Panel>
+        )}
+      </div>
     )
   }
 

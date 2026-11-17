@@ -26,13 +26,22 @@ logger = logging.getLogger(__name__)
 # Source: PPAC Industry Consumption Report, September 2024 (FY 2024-25).
 # Rounded model input, expressed as crude-equivalent million barrels/day.
 INDIA_CONSUMPTION_MBPD   = 5.4
-# Source: MoPNG/ISPRL capacity statement, 20 March 2025 (5.33 MMT ≈ 39 MB).
-SPR_CAPACITY_MB          = 39.0
-SPR_SITES = {
-    "Visakhapatnam": 13.33,
-    "Mangaluru":     9.75,
-    "Padur":         18.33,
+# Source: MoPNG/ISPRL capacity statement, 20 March 2025 (Phase I, 5.33 MMT).
+# Site figures are the single source of truth; the total is derived from them.
+BBL_PER_TONNE = 7.33
+SPR_SITES_MMT = {
+    "Visakhapatnam": 1.33,
+    "Mangaluru":     1.50,
+    "Padur":         2.50,
 }
+SPR_SITES = {site: round(mmt * BBL_PER_TONNE, 2) for site, mmt in SPR_SITES_MMT.items()}
+SPR_CAPACITY_MB = round(sum(SPR_SITES.values()), 1)  # ≈ 39.1 MB
+
+# Days for each demand lever to reach full effect (linear ramp). Rationing
+# needs notification and enforcement; refiners can cut runs within days.
+LEVER_RAMP_DAYS = {"run_rate": 3, "industrial": 7, "transport": 14}
+# Pessimistic case: levers deliver only this share of their target.
+PESSIMISTIC_LEVER_EFFECTIVENESS = 0.5
 
 # Chokepoint → fraction of India's imports that transit it (2024 data)
 _CHOKEPOINT_IMPORT_SHARE: dict[str, float] = {
@@ -61,6 +70,33 @@ _DEMAND_LEVERS = [
 # ---------------------------------------------------------------------------
 # Core Calculation
 # ---------------------------------------------------------------------------
+
+Lever = tuple[float, int]  # (full-effect saving in mbpd, ramp days)
+
+
+def _managed_draw(day: int, shortfall: float, levers: list[Lever], effectiveness: float = 1.0) -> float:
+    """Reserve draw on `day` with each lever ramping linearly to full effect."""
+    saved = sum(mbpd * min(1.0, (day + 1) / ramp) for mbpd, ramp in levers)
+    return max(0.0, shortfall - effectiveness * saved)
+
+
+def _days_until_empty(
+    shortfall: float, levers: list[Lever], effectiveness: float = 1.0, cap_days: int = 3650
+) -> float | None:
+    """Fractional day the reserve runs dry, or None if the levers close the gap first.
+
+    Savings only grow with time, so once the draw reaches zero it stays there.
+    """
+    level = SPR_CAPACITY_MB
+    for day in range(cap_days):
+        draw = _managed_draw(day, shortfall, levers, effectiveness)
+        if draw <= 0:
+            return None
+        if level <= draw:
+            return day + level / draw
+        level -= draw
+    return None
+
 
 def calculate_spr_impact(
     lead_time_days: float,
@@ -119,14 +155,18 @@ def calculate_spr_impact(
         {"name": f"Transport Fuel Rationing ({int(transport_cut * 100)}%)",    "reduction_pct": transport_cut, "cost": "Medium"},
         {"name": "Strategic Import Acceleration","reduction_pct": 0.00, "cost": "Medium"},
     ]
-    for lever in demand_levers:
+    ramps = [LEVER_RAMP_DAYS["run_rate"], LEVER_RAMP_DAYS["industrial"], LEVER_RAMP_DAYS["transport"], 0]
+    levers: list[Lever] = []
+    for lever, ramp in zip(demand_levers, ramps):
         if lever["reduction_pct"] > 0:
             reduced_mbpd = INDIA_CONSUMPTION_MBPD * lever["reduction_pct"]
             cumulative_reduction += reduced_mbpd
+            levers.append((reduced_mbpd, ramp))
             demand_actions.append({
                 "action":      lever["name"],
                 "reduction":   f"{lever['reduction_pct']:.0%} of daily demand",
                 "saves_mbpd":  round(reduced_mbpd, 2),
+                "ramp_days":   ramp,
                 "cost":        lever["cost"],
             })
         else:
@@ -134,19 +174,27 @@ def calculate_spr_impact(
                 "action":      lever["name"],
                 "reduction":   "Logistics speed-up",
                 "saves_mbpd":  0.0,
+                "ramp_days":   0,
                 "cost":        lever["cost"],
             })
 
+    # Steady-state shortfall once every lever is at full effect.
     adjusted_shortfall = max(0.0, daily_shortfall - cumulative_reduction)
-    if adjusted_shortfall > 0 and adjusted_shortfall < daily_shortfall:
-        adjusted_survival = SPR_CAPACITY_MB / adjusted_shortfall
-        adjusted_gap = max(0.0, lead_time_days - adjusted_survival)
-    elif adjusted_shortfall == 0:
+
+    # Survival with levers ramping in, not switched on at day 0.
+    if daily_shortfall <= 0:
         adjusted_survival = 999.0
-        adjusted_gap = 0.0
     else:
-        adjusted_survival = actual_spr_survival_days
-        adjusted_gap = max(0.0, lead_time_days - adjusted_survival)
+        empty_at = _days_until_empty(daily_shortfall, levers)
+        adjusted_survival = 999.0 if empty_at is None else empty_at
+    adjusted_gap = max(0.0, lead_time_days - adjusted_survival)
+
+    if daily_shortfall <= 0:
+        pessimistic_survival = 999.0
+    else:
+        empty_at = _days_until_empty(daily_shortfall, levers, PESSIMISTIC_LEVER_EFFECTIVENESS)
+        pessimistic_survival = 999.0 if empty_at is None else empty_at
+    pessimistic_gap = max(0.0, lead_time_days - pessimistic_survival)
 
     # ── Step 4: Burn-Down Time-Series ────────────────────────────────────────
     horizon = int(lead_time_days) + 5
@@ -165,7 +213,7 @@ def calculate_spr_impact(
 
         # Adjusted burn (with demand management levers applied)
         if day < lead_time_days:
-            current_spr_adj = max(0.0, current_spr_adj - adjusted_shortfall)
+            current_spr_adj = max(0.0, current_spr_adj - _managed_draw(day, daily_shortfall, levers))
             status_adj = "Managed" if current_spr_adj > 0.0 else "Critical"
         else:
             current_spr_adj = min(SPR_CAPACITY_MB, current_spr_adj + adjusted_shortfall * 0.5)
@@ -197,12 +245,31 @@ def calculate_spr_impact(
     if supply_gap_days <= 0:
         recommendation = "✅ SPR Sufficient — No intervention required."
         status_color   = "green"
-    elif adjusted_gap <= 0:
+    elif adjusted_gap <= 0 and pessimistic_gap <= 0:
         recommendation = "⚠️ Demand Management Required — Levers can close the gap."
+        status_color   = "orange"
+    elif adjusted_gap <= 0:
+        recommendation = (
+            "⚠️ Demand Management Required — Levers close the gap only near full effect; "
+            f"at {PESSIMISTIC_LEVER_EFFECTIVENESS:.0%} delivery the reserve runs "
+            f"{pessimistic_gap:.1f} days short."
+        )
         status_color   = "orange"
     else:
         recommendation = "🚨 CRITICAL — Gap remains even with full demand management. Emergency imports required."
         status_color   = "red"
+
+    ramp_text = ", ".join(
+        f"{a['action'].split(' (')[0].lower()} {a['ramp_days']} d"
+        for a in demand_actions if a["saves_mbpd"] > 0
+    )
+    assumptions = [
+        f"Reserve starts full ({SPR_CAPACITY_MB} MB across 3 sites); real fill is usually lower, so survival days are an upper bound.",
+        f"Levers ramp linearly to full effect: {ramp_text or 'none active'}.",
+        "Lever savings are shares of total national demand and can overlap (a refinery run cut and fuel rationing may remove the same barrels).",
+        f"Pessimistic case assumes levers deliver {PESSIMISTIC_LEVER_EFFECTIVENESS:.0%} of target.",
+        "Replacement cargoes all arrive on the lead-time day; no partial deliveries before then.",
+    ]
 
     return {
         "blocked_chokepoint":       blocked_chokepoint,
@@ -215,6 +282,9 @@ def calculate_spr_impact(
         "supply_gap_days":          round(supply_gap_days, 1),
         "adjusted_gap_days":        round(adjusted_gap, 1),
         "adjusted_survival_days":   round(adjusted_survival, 1),
+        "pessimistic_survival_days": round(pessimistic_survival, 1),
+        "pessimistic_gap_days":     round(pessimistic_gap, 1),
+        "assumptions":              assumptions,
         "burndown_df":              df_burndown,
         "demand_actions":           demand_actions,
         "recommendation":           recommendation,

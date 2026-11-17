@@ -17,6 +17,8 @@ Zero external API calls are made at query time.
 from __future__ import annotations
 
 import logging
+import re
+from datetime import datetime, timezone
 from typing import Any
 
 import searoute as sr
@@ -33,7 +35,12 @@ from src.database.neo4j_graph import (
     get_driver,
 )
 from src.database.postgres_db import fetch_latest_prices, fetch_risk_events
-from src.agents.modeler_agent import get_current_freight_index, score_alternatives
+from src.agents.modeler_agent import (
+    _decayed_risk,
+    _event_timestamp,
+    get_current_freight_index,
+    score_alternatives,
+)
 from src.utils.constants import (
     CHOKEPOINTS,
     FIXER_BRENT_FALLBACK_USD,
@@ -255,6 +262,37 @@ def _composite_score(
     )
 
 
+class UnknownRefinery(ValueError):
+    """Destination refinery name not in the graph or seed data."""
+
+
+_COUNTRY_SUFFIX = re.compile(r"\s*\([^)]*\)\s*$")
+
+
+def canonical_refinery(name: str) -> str:
+    """Dropdown labels are "Jamnagar (India)"; graph nodes are "Jamnagar"."""
+    return _COUNTRY_SUFFIX.sub("", name).strip()
+
+
+def _country_risk(country: str, events: list[dict[str, Any]], now: datetime) -> float:
+    """Worst single matching event, decayed by age exactly as the Modeler does.
+
+    max(), not a sum: two moderate events must not saturate a country at 0.95.
+    Decay keeps an old incident from penalising a supplier indefinitely.
+    """
+    risk = 0.05
+    needle = country.strip().lower()
+    if not needle:
+        return risk
+    for ev in events:
+        region = (ev.get("region") or "").lower()
+        summary = (ev.get("summary") or "").lower()
+        if needle in region or needle in summary:
+            raw = float(ev.get("severity", 0.0) or 0.0) * float(ev.get("confidence", 0.5) or 0.5)
+            risk = max(risk, _decayed_risk(raw, _event_timestamp(ev), now, ev.get("disruption_type")))
+    return min(0.95, risk)
+
+
 # ---------------------------------------------------------------------------
 # Main Public Interface
 # ---------------------------------------------------------------------------
@@ -273,16 +311,17 @@ def find_alternatives(
     Args:
         blocked_chokepoint:   Chokepoint name, e.g. "Strait of Hormuz".
         crude_grade:          Optional crude grade to filter (e.g. "Arab Light").
-        ranking_mode:         "cost" (cheapest first) or "speed" (fastest first).
+        ranking_mode:         "cost" (cheapest first), "speed" (fastest first) or
+                              "balanced" (composite of cost, time, risk, congestion).
         destination_refinery: Name of the destination refinery. Defaults to Jamnagar.
         excluded_countries:   List of countries to remove from results.
     """
-    dest_name = destination_refinery or _DEFAULT_DESTINATION
+    dest_name = canonical_refinery(destination_refinery or _DEFAULT_DESTINATION)
     dest_coords = get_refinery_coords(dest_name)
     if dest_coords is None:
-        logger.warning("fixer_agent: unknown destination '%s', falling back to Jamnagar.", dest_name)
-        dest_name = _DEFAULT_DESTINATION
-        dest_coords = get_refinery_coords(_DEFAULT_DESTINATION)
+        # Previously fell back to Jamnagar silently, which also swallowed every
+        # dropdown label ("Rotterdam (Netherlands)") and routed it to Jamnagar.
+        raise UnknownRefinery(dest_name)
     dest_lat = dest_coords["lat"]
     dest_lon = dest_coords["lon"]
 
@@ -424,6 +463,7 @@ def find_alternatives(
 
     # ─── Prep for dynamic risk scoring ─────────────────────────────────────
     all_events = fetch_risk_events(limit=50)
+    now = datetime.now(timezone.utc)
     context_events = [
         e for e in all_events
         if blocked_chokepoint in (e.get("affected_chokepoints") or [])
@@ -473,18 +513,7 @@ def find_alternatives(
                 )
                 c_cost = current_brent + c_freight
 
-                c_risk = 0.05
-                c_country = c_port.get("country", "")
-                for ev in all_events:
-                    region_str = (ev.get("region") or "").lower()
-                    summary_str = (ev.get("summary") or "").lower()
-                    if c_country.lower() in region_str or c_country.lower() in summary_str:
-                        severity = float(ev.get("severity", 0.0))
-                        confidence = float(ev.get("confidence", 0.5))
-                        # Use max(), not +=: risk reflects the worst single event,
-                        # not an accumulation that trivially caps every multi-event country at 0.95
-                        c_risk = max(c_risk, severity * confidence)
-                c_risk = min(0.95, c_risk)
+                c_risk = _country_risk(c_port.get("country", ""), all_events, now)
 
                 c_cong_raw = c_port.get("congestion_score")
                 c_cong = float(c_cong_raw) if c_cong_raw is not None else 0.5
@@ -534,19 +563,7 @@ def find_alternatives(
             )
             landed_cost  = round(current_brent + freight_prem, 2)
 
-            # Dynamic risk score based on Intelligence pipeline.
-            # Baseline is 5%; we take the MAX severity*confidence across all matching events.
-            # Using += here would trivially push any country in 2+ moderate events to 0.95,
-            # producing the identical-score bucketing bug visible in the Producer Risk Matrix.
-            risk_score = 0.05
-            for ev in all_events:
-                region_str = (ev.get("region") or "").lower()
-                summary_str = (ev.get("summary") or "").lower()
-                if country.lower() in region_str or country.lower() in summary_str:
-                    severity = float(ev.get("severity", 0.0))
-                    confidence = float(ev.get("confidence", 0.5))
-                    risk_score = max(risk_score, severity * confidence)
-            risk_score = min(0.95, risk_score)
+            risk_score = _country_risk(country, all_events, now)
 
         # Step 5 — Composite score
         comp = _composite_score(
@@ -577,6 +594,8 @@ def find_alternatives(
     # Rank
     if ranking_mode == "speed":
         procurement_matrix.sort(key=lambda x: x["lead_time_days"])
+    elif ranking_mode == "balanced":
+        procurement_matrix.sort(key=lambda x: -x["composite_score"])
     else:  # default: cost
         procurement_matrix.sort(key=lambda x: x["landed_cost_usd"])
 

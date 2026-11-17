@@ -35,6 +35,7 @@ from src.utils.rate_limit import RateLimiter
 
 # ── Agent imports (untouched business logic) ────────────────────────────────
 from src.agents.fixer_agent import (
+    UnknownRefinery,
     find_alternatives,
     get_chokepoint_list,
     get_crude_grade_list,
@@ -151,7 +152,9 @@ _DEGRADED = "Data temporarily unavailable"
 
 
 def _server_error(exc: Exception) -> HTTPException:
-    """503 when Postgres is down (retryable), 500 for everything else."""
+    """422 for an unknown refinery, 503 when Postgres is down, else 500."""
+    if isinstance(exc, UnknownRefinery):
+        return HTTPException(status_code=422, detail="Unknown destination refinery")
     if isinstance(exc, DatabaseUnavailable):
         return HTTPException(status_code=503, detail="Database unavailable")
     return HTTPException(status_code=500, detail=_INTERNAL_ERROR)

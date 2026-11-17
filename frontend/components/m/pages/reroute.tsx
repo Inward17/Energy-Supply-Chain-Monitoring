@@ -6,6 +6,9 @@ import { Bar, ErrorNote, Eyebrow, Panel, Segmented, fmt, riskColor, riskText } f
 
 export const DEFAULT_EXCLUDED = ["Russia", "Iran", "Venezuela", "Syria"]
 
+// What decides the top row, so "Recommended" never implies more than it is.
+const MODE_LABEL = { cost: "cheapest landed", speed: "fastest arrival", balanced: "best composite (cost, time, risk, congestion)" } as const
+
 export function useConfig() {
   const [cfg, setCfg] = useState<{ chokepoints: string[]; refineries: string[]; grades: string[] }>({ chokepoints: [], refineries: [], grades: [] })
   useEffect(() => {
@@ -55,7 +58,7 @@ export function ReroutePage() {
   const [blocked, setBlocked] = useState("Strait of Hormuz")
   const [refinery, setRefinery] = useState("Jamnagar (India)")
   const [grade, setGrade] = useState("Any")
-  const [mode, setMode] = useState<"cost" | "speed">("cost")
+  const [mode, setMode] = useState<"cost" | "speed" | "balanced">("cost")
   const [excluded, setExcluded] = useState<string[]>(DEFAULT_EXCLUDED)
   const [strict, setStrict] = useState(false)
   const [maxLead, setMaxLead] = useState(90)
@@ -109,7 +112,7 @@ export function ReroutePage() {
         </div>
         <div className="grid grid-cols-2 items-end gap-3 lg:grid-cols-[200px_minmax(0,1fr)_220px_160px]">
           <div className="flex flex-col gap-1.5"><Eyebrow>Optimise for</Eyebrow>
-            <Segmented label="Optimise for" value={mode} onChange={setMode} options={[{ value: "cost", label: "Cost" }, { value: "speed", label: "Time" }]} />
+            <Segmented label="Optimise for" value={mode} onChange={setMode} options={[{ value: "cost", label: "Cost" }, { value: "speed", label: "Time" }, { value: "balanced", label: "Balanced" }]} />
           </div>
           <button type="button" onClick={() => setMore((v) => !v)} aria-expanded={more} className="h-12 rounded-[10px] border border-edge bg-well px-3 text-left text-[13px] text-muted lg:hidden">
             More · {maxLead} d, {excluded.length} excluded
@@ -157,7 +160,7 @@ export function ReroutePage() {
           <section className="flex flex-wrap gap-4 lg:gap-5">
             {best ? (
               <div className="flex min-w-0 flex-[2_1_420px] flex-col gap-3.5 rounded-[18px] border border-safe-line bg-safe-soft p-5 lg:p-[22px]">
-                <span className="eyebrow text-safe">Recommended</span>
+                <span className="eyebrow text-safe">Recommended · {MODE_LABEL[mode]}</span>
                 <div className="flex flex-wrap items-end justify-between gap-3">
                   <div className="flex flex-col gap-1">
                     <span className="text-xl font-bold text-head [font-stretch:108%] lg:text-2xl">{best.crude_grade} · {best.country}</span>
@@ -193,7 +196,7 @@ export function ReroutePage() {
           <Panel className="flex flex-col p-4 lg:p-[22px]">
             <div className="flex items-baseline justify-between pb-3">
               <h2 className="text-[15px] font-bold text-head">Procurement matrix</h2>
-              <span className="font-mono text-[11px] text-faint">{rows.length} of {res.procurement_matrix.length} options · by {mode === "cost" ? "cost" : "time"}</span>
+              <span className="font-mono text-[11px] text-faint">{rows.length} of {res.procurement_matrix.length} options · by {mode === "cost" ? "cost" : mode === "speed" ? "time" : "composite score"}</span>
             </div>
             {uniform && (
               <p className="mb-3 rounded-lg border border-warn-boxline bg-warn-box px-3 py-2 text-xs text-fg">
