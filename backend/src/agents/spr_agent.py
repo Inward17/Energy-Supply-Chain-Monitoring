@@ -54,7 +54,11 @@ _CHOKEPOINT_IMPORT_SHARE: dict[str, float] = {
     "Strait of Malacca":     0.05,
     "Cape of Good Hope":     0.02,
     "Turkish Straits":       0.01,
-    "LOOP (Louisiana)":      0.00,
+    # Rough estimate: Baltic-loaded Russian and US Gulf cargoes reach India
+    # through the Mediterranean, so they pass Gibraltar on the way to Suez.
+    "Strait of Gibraltar":   0.08,   # must stay below Suez: these cargoes also transit it
+    # Explicit zero: India's crude imports do not use Panama (VLCCs cannot transit).
+    "Panama Canal":          0.00,
 }
 
 # GDP / inflation impact per day of zero-oil (World Bank / McKinsey estimates)
@@ -126,7 +130,10 @@ def calculate_spr_impact(
     """
     # ── Step 1: Compute daily shortfall ─────────────────────────────────────
     if disrupted_volume_mbpd is None:
-        share = _CHOKEPOINT_IMPORT_SHARE.get(blocked_chokepoint, 0.10)
+        # No default: an unknown name must not get an invented import share.
+        if blocked_chokepoint not in _CHOKEPOINT_IMPORT_SHARE:
+            raise ValueError(f"no import-share assumption for chokepoint {blocked_chokepoint!r}")
+        share = _CHOKEPOINT_IMPORT_SHARE[blocked_chokepoint]
         disrupted_volume_mbpd = INDIA_CONSUMPTION_MBPD * share
 
     daily_shortfall = disrupted_volume_mbpd

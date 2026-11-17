@@ -134,10 +134,12 @@ export interface PriceSeries {
 
 export interface Instrument {
   ticker: string
-  price: number
-  high_52w: number
-  low_52w: number
-  volume: number
+  /** false when the feed has no observations; prices are then null. */
+  available: boolean
+  price: number | null
+  high_52w: number | null
+  low_52w: number | null
+  volume: number | null
   series: PriceSeries[]
 }
 

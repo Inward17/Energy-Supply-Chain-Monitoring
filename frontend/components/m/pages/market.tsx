@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useData } from "../data"
-import { Eyebrow, Loading, Panel, Segmented, Spark, fmt, shortDate } from "../ui"
+import { ErrorNote, Eyebrow, Loading, Panel, Segmented, Spark, fmt, shortDate } from "../ui"
 
 const META: Record<string, { name: string; color: string }> = {
   "BZ=F": { name: "Brent crude", color: "var(--x-5aaeff)" },
@@ -10,13 +10,20 @@ const META: Record<string, { name: string; color: string }> = {
   "NG=F": { name: "Henry Hub gas", color: "var(--x-c9a8ff)" },
   XLE: { name: "Energy sector", color: "var(--x-ffb86b)" },
 }
+// Missing data reads "Unavailable", never "$0.00".
+const usd = (v: number | null) => (v == null ? "Unavailable" : `$${fmt(v)}`)
+
 const RANGE = { "2W": 10, "1M": 21, "2M": 9999 } as const
 type Range = keyof typeof RANGE
 
 export function MarketPage() {
-  const { market, live } = useData()
+  const { market, live, feedFailed, refresh } = useData()
   const [range, setRange] = useState<Range>("2M")
-  if (!market) return <Loading label="Loading market data…" />
+  if (!market) {
+    return feedFailed.market
+      ? <ErrorNote message="Market data did not load." onRetry={() => void refresh()} />
+      : <Loading label="Loading market data…" />
+  }
 
   const brent = market.instruments.find((i) => i.ticker === "BZ=F")
   const others = market.instruments.filter((i) => i.ticker !== "BZ=F")
@@ -44,7 +51,7 @@ export function MarketPage() {
               <div className="flex flex-col gap-1.5">
                 <h2 className="eyebrow text-[11px]">Brent crude · BZ=F</h2>
                 <div className="flex items-baseline gap-3">
-                  <span className="text-[44px] font-bold leading-[0.95] tracking-[-0.03em] text-head [font-stretch:108%] lg:text-[52px]">${fmt(brent.price)}</span>
+                  <span className="text-[44px] font-bold leading-[0.95] tracking-[-0.03em] text-head [font-stretch:108%] lg:text-[52px]">{usd(brent.price)}</span>
                   <span className="font-mono text-[13px]" style={{ color: chg(bv) >= 0 ? "var(--x-ff8a8d)" : "var(--x-6fe0ab)" }}>{chg(bv) >= 0 ? "▲" : "▼"} {Math.abs(chg(bv)).toFixed(1)}% · {range}</span>
                 </div>
               </div>
@@ -87,8 +94,8 @@ export function MarketPage() {
           return (
             <div key={i.ticker} className="panel relative flex flex-col gap-1.5 overflow-hidden rounded-2xl p-[18px] pb-[84px]">
               <div className="flex justify-between gap-2"><Eyebrow>{m.name} · {i.ticker}</Eyebrow><span className="font-mono text-[11px]" style={{ color: c >= 0 ? "var(--x-ff8a8d)" : "var(--x-6fe0ab)" }}>{c >= 0 ? "▲" : "▼"} {Math.abs(c).toFixed(1)}%</span></div>
-              <span className="text-[28px] font-bold text-head [font-stretch:108%]">${fmt(i.price)}</span>
-              <span className="font-mono text-[11px] text-dim">{i.price >= i.high_52w ? "52w high today" : `52w $${fmt(i.low_52w)}–$${fmt(i.high_52w)}`}</span>
+              <span className="text-[28px] font-bold text-head [font-stretch:108%]">{usd(i.price)}</span>
+              <span className="font-mono text-[11px] text-dim">{!i.available ? "no observations" : i.price != null && i.high_52w != null && i.price >= i.high_52w ? "52w high today" : `52w $${fmt(i.low_52w)}–$${fmt(i.high_52w)}`}</span>
               <div className="absolute inset-x-0 bottom-0"><Spark values={vals} color={m.color} height={72} /></div>
             </div>
           )

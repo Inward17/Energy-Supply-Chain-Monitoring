@@ -24,25 +24,28 @@ export function SprPage() {
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const t = useRef<number | undefined>(undefined)
+  // Inputs re-simulate on change; a slow older response must not overwrite
+  // the result for the controls now on screen.
+  const seq = useRef(0)
 
   const run = async () => {
+    const id = ++seq.current
     setBusy(true)
     setErr(null)
     try {
-      setRes(
-        await fetchSpr({
+      const next = await fetchSpr({
           blocked_chokepoint: blocked,
           lead_time_days: lead,
           gdp_impact_rate_pct: gdp,
           run_rate_cut_pct: on.run ? pct.run : 0,
           industrial_cut_pct: on.ind ? pct.ind : 0,
           transport_cut_pct: on.trans ? pct.trans : 0,
-        }),
-      )
+        })
+      if (id === seq.current) setRes(next)
     } catch {
-      setErr("The reserve model did not respond.")
+      if (id === seq.current) setErr("The reserve model did not respond.")
     } finally {
-      setBusy(false)
+      if (id === seq.current) setBusy(false)
     }
   }
 
