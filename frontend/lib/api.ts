@@ -165,6 +165,9 @@ export interface ProcurementRow {
   lead_time_days: number
   risk_score: number
   composite_score: number
+  /** verified: route engine avoided the blocked passage; unverified: static detour;
+   *  estimated: no coordinates, fallback distance. */
+  route_basis?: "verified" | "unverified" | "estimated"
   recommended: boolean
   top: boolean
   match_type: "exact" | "substitute" | "blend"

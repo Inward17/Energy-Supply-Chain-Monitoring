@@ -34,6 +34,12 @@
 - Frontend fetches time out (60 s, 90 s for war-room); Cloudflare builds fail
   if `NEXT_PUBLIC_API_URL` is missing or localhost.
 
+- Reroute lead times come from the route that avoids the blocked passage
+  (searoute restriction) whenever one exists; rows carry `route_basis`
+  verified / unverified (no restriction: Malacca, Cape, LOOP → static detour) /
+  estimated (no coordinates). Neo4j-down fallback is built from seed ports, so
+  it has coordinates and real per-port routes.
+
 ## Open items
 - Neon branch creation returns **HTTP 412** in CI (cause unconfirmed; CI falls
   back to a container). `continue-on-error` hides it — check the job summary.
