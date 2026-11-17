@@ -17,7 +17,6 @@ Zero external API calls are made at query time.
 from __future__ import annotations
 
 import logging
-import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -266,12 +265,15 @@ class UnknownRefinery(ValueError):
     """Destination refinery name not in the graph or seed data."""
 
 
-_COUNTRY_SUFFIX = re.compile(r"\s*\([^)]*\)\s*$")
-
-
 def canonical_refinery(name: str) -> str:
-    """Dropdown labels are "Jamnagar (India)"; graph nodes are "Jamnagar"."""
-    return _COUNTRY_SUFFIX.sub("", name).strip()
+    """Dropdown labels are "Jamnagar (India)"; graph nodes are "Jamnagar".
+
+    Plain string ops rather than a regex: the name is user input (ReDoS).
+    """
+    name = name.strip()
+    if name.endswith(")") and "(" in name:
+        name = name[: name.rfind("(")]
+    return name.strip()
 
 
 def _country_risk(country: str, events: list[dict[str, Any]], now: datetime) -> float:
