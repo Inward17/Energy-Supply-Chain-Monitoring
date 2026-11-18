@@ -465,130 +465,120 @@ brief is the deliberate exception, and it is cached and rate-limited.
 
 | Requirement | Version | Notes |
 |---|---|---|
-| Python | **3.11+** | Tested on 3.11 and 3.12 |
-| Node.js | **18.17+** | Required by Next.js 14 |
-| Docker + Docker Compose | **27+** | Recommended path — installs both databases for you |
-| PostgreSQL | 14+ | Only needed if not using Docker |
-| Neo4j Community | 5.x | Only needed if not using Docker |
+| Docker + Docker Compose | 27+ / v2 | Option A — runs everything |
+| Python | 3.13 | Option B (matches the Dockerfile and CI) |
+| Node.js | 22 (`frontend/.nvmrc`) | Option B |
+| PostgreSQL / Neo4j | 15+ / 5.x | Option B, if not using Docker for the databases |
 
 ---
 
-### Option A — Docker (Recommended)
+### Option A — Docker (whole stack)
 
-This is the fastest and most reliable path. Docker starts both databases, creates the schema, and loads all historical seed data automatically. No manual database setup required.
-
-**Step 1 — Clone and configure credentials**
+One command runs Postgres (with historical seed data), Neo4j, the API and the
+UI. Every port binds to `127.0.0.1` only.
 
 ```bash
 git clone <repo-url>
 cd energy-supply-chain
-
-# The .env file MUST exist before running docker-compose — Postgres reads
-# POSTGRES_PASSWORD and NEO4J_PASSWORD from it at container creation time.
-cd backend
-copy .env.example .env        # Windows
-# cp .env.example .env         # Mac/Linux
+cp backend/.env.example backend/.env
 ```
 
-Open `backend/.env` and fill in at minimum:
-- `DB_PASSWORD` — any password (must match what your app uses to connect)
-- `NEO4J_PASSWORD` — any password
-- `GEMINI_API_KEY` — free at https://aistudio.google.com/app/apikey (no credit card)
-- `AISSTREAM_API_KEY` — free at https://aisstream.io
+Set at least `DB_PASSWORD` and `NEO4J_PASSWORD` in `backend/.env` (any values;
+the containers are created with them). Add `GEMINI_API_KEY` /
+`AISSTREAM_API_KEY` if you want live ingestion.
 
 ```bash
-cd ..   # back to repo root
+docker compose --env-file backend/.env up -d --build
 ```
 
-**Step 2 — Start both databases**
+| Service | URL | Notes |
+|---|---|---|
+| UI | http://localhost:3000 | nginx serving the static export |
+| API | http://localhost:8000 (`/docs` for OpenAPI) | read-only; seeds Neo4j on first boot |
+| Neo4j Browser | http://localhost:7474 | user `neo4j`, your `NEO4J_PASSWORD` |
+| Postgres | localhost:5432 | `seed/schema.sql` + `seed/postgres_dump.sql` load on first boot |
+
+The seed data fills the dashboard immediately. To also run hourly **live
+ingestion** (calls Gemini, AIS and news APIs, so it spends their quotas):
 
 ```bash
-# From repo root (where docker-compose.yml lives)
-docker-compose up -d
-
-# Wait for both containers to be healthy (~15–30 seconds)
-docker-compose ps
-# postgres: healthy   neo4j: healthy
+docker compose --env-file backend/.env --profile worker up -d
 ```
 
-Postgres automatically runs `seed/schema.sql` then `seed/postgres_dump.sql` on first boot, loading all historical event data, backtest records, and market prices. **You do not need to run a separate restore script.**
-
-> **What about Neo4j?** The Neo4j knowledge graph (chokepoints, export ports, refineries, crude grades and their relationships) is seeded by the Python application, not by Docker. It runs automatically the first time `uvicorn api:app` starts — before the first HTTP request arrives. If Neo4j is not yet seeded, the Reroute Matrix will return empty results; starting the backend fixes this immediately with no manual action.
-
-**Step 3 — Install Python and Node dependencies**
+Useful commands:
 
 ```bash
-# Backend
-cd backend
-python -m venv venv
-.\venv\Scripts\Activate.ps1   # Windows
-# source venv/bin/activate      # Mac/Linux
-pip install -r requirements.txt
-cd ..
-
-# Frontend
-cd frontend
-npm install
-cd ..
+docker compose --env-file backend/.env ps          # health of each service
+docker compose --env-file backend/.env logs -f backend
+docker compose --env-file backend/.env down        # stop (keeps data)
+docker compose --env-file backend/.env down -v     # stop and delete the databases
 ```
 
-**Step 4 — Start the application (3 terminals)**
+Notes:
 
-```bash
-# Terminal 1 — FastAPI backend (also seeds Neo4j knowledge graph on first boot)
-cd backend
-uvicorn api:app --reload --port 8000
+- `--env-file backend/.env` supplies the `${DB_PASSWORD}`-style values in
+  `docker-compose.yml`; the same file is passed into the containers, with
+  `DB_HOST` / `NEO4J_URI` overridden to the container network.
+- The UI's API URL is compiled in at build time (`NEXT_PUBLIC_API_URL`, default
+  `http://localhost:8000`, the API's published port). Changing it needs
+  `--build`. To use CARTO tiles, export `NEXT_PUBLIC_CARTO_KEY` before building.
+- The UI container sends the same security headers as production except the
+  CSP, whose `connect-src` names the production API.
+- The `Docker` GitHub Actions workflow builds both images and boots this stack
+  on every PR that touches them.
 
-# Terminal 2 — Background cron worker (keeps data fresh every 60 min)
-cd backend
-python cron_worker.py
-
-# Terminal 3 — React frontend
-cd frontend
-npm run dev
-```
-
-Open http://localhost:3000 — the dashboard should show populated charts immediately.
-
-To compare with the previous UI, run it against the same backend on another port:
-
-```bash
-cd legacy/frontend
-npm run dev -- -p 3001
-```
+You can also run only the databases and the app natively:
+`docker compose --env-file backend/.env up -d postgres neo4j`, then Option B
+from "Install dependencies".
 
 ---
 
-### Option B — Manual Database Setup (without Docker)
+### Option B — Native
 
-Use this path if you prefer to manage Postgres and Neo4j yourself.
-
-**Postgres:**
+**Databases.** Either `docker compose --env-file backend/.env up -d postgres neo4j`,
+or install them yourself:
 
 ```bash
-# Create the database
+# Postgres: create the database and load schema + seed data
 psql -U postgres -c "CREATE DATABASE energy_resilience;"
-
-# Restore schema and seed data (required — without this, dashboard is empty for hours)
-# Windows:
-.\scripts\restore_seed_data.ps1
-# Mac/Linux:
-bash scripts/restore_seed_data.sh
+.\scripts\restore_seed_data.ps1      # Windows
+bash scripts/restore_seed_data.sh    # Mac/Linux
 ```
 
-**Neo4j:**
+Neo4j 5.x: start it, set the password at http://localhost:7474 to your
+`NEO4J_PASSWORD`. The graph seeds itself when the API starts.
 
-1. Install Neo4j Community 5.x and start it
-2. Open http://localhost:7474 in your browser
-3. Log in with `neo4j` / `neo4j` (default credentials on first boot)
-4. You will be prompted to set a new password — **use the same value as `NEO4J_PASSWORD` in `backend/.env`**
-5. The knowledge graph seeds automatically when `uvicorn api:app` starts (no manual import step)
+> Without the seed restore the dashboard is empty until ingestion has run for
+> a few hours.
 
-**Install and start:**
+**Install dependencies**
 
-Follow Steps 1, 3, and 4 from Option A above (skip Step 2).
+```bash
+cd backend
+python -m venv venv
+.\venv\Scripts\Activate.ps1          # Windows
+# source venv/bin/activate           # Mac/Linux
+pip install -r requirements.txt
 
-> **Important:** Without the seed restore step, the dashboard will appear empty — 0 risk events, no backtest charts, flat market data — until the background cron worker accumulates enough live data, which can take several hours. Always run the restore script.
+cd ../frontend
+npm install
+```
+
+**Run**
+
+```bash
+# API (seeds Neo4j on first boot)
+cd backend && uvicorn api:app --reload --port 8000
+
+# Ingestion scheduler (optional; calls metered APIs)
+cd backend && python cron_worker.py          # or: python cron_worker.py --once
+
+# UI
+cd frontend && npm run dev                   # http://localhost:3000
+```
+
+The previous UI can run against the same API for comparison:
+`cd legacy/frontend && npm run dev -- -p 3001`.
 
 ---
 

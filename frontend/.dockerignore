@@ -1,0 +1,16 @@
+# Rebuilt inside the image; copying them would be slow and platform-specific.
+node_modules/
+.next/
+out/
+
+# Local env files can hold keys; build args are the only way values get in.
+.env
+.env.*
+
+# Test and editor artefacts
+test-results/
+playwright-report/
+*.log
+.DS_Store
+Dockerfile
+.dockerignore

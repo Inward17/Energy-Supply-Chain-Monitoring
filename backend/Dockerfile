@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1
 
-# Single image, two workloads. Northflank runs this twice with different start
-# commands — one API service, one worker service — so both always ship the
-# identical dependency set and there is no chance of them drifting apart.
+# Single image, two workloads, so the API and the ingestion worker always ship
+# the identical dependency set. Render runs the API; docker-compose.yml runs
+# both (the worker behind the "worker" profile).
 #
 #   API     : uvicorn api:app --host 0.0.0.0 --port $PORT     (this is the default CMD)
 #   Worker  : python cron_worker.py
