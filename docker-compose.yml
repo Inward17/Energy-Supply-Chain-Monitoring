@@ -35,7 +35,7 @@ services:
   # the Neo4j image turns every NEO4J_* variable into a config setting and
   # refuses to start on NEO4J_URI, and API keys don't belong in a DB container.
   postgres:
-    image: postgres:15-alpine
+    image: postgres:17-alpine   # matches the seed dump (pg_dump 17.5)
     environment:
       POSTGRES_DB: energy_resilience
       POSTGRES_USER: ${DB_USER:-postgres}

@@ -468,7 +468,7 @@ brief is the deliberate exception, and it is cached and rate-limited.
 | Docker + Docker Compose | 27+ / v2 | Option A — runs everything |
 | Python | 3.13 | Option B (matches the Dockerfile and CI) |
 | Node.js | 22 (`frontend/.nvmrc`) | Option B |
-| PostgreSQL / Neo4j | 15+ / 5.x | Option B, if not using Docker for the databases |
+| PostgreSQL / Neo4j | 17 / 5.x | Option B, if not using Docker for the databases |
 
 ---
 
