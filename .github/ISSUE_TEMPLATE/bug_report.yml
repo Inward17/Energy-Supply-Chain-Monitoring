@@ -1,0 +1,57 @@
+name: Bug report
+description: Something on the dashboard or API is wrong or broken.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. **Security problems go through private reporting instead** — see SECURITY.md.
+        Never paste API keys, `.env` contents or database URLs here.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Overview / SDI
+        - Threat Map
+        - Risk
+        - Markets
+        - Reroute
+        - SPR
+        - War Room
+        - History / backtests
+        - Data health / ingestion
+        - API
+        - Docker / setup
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+      placeholder: "Reroute with Suez blocked recommends a terminal whose route goes through Suez…"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open #reroute
+        2. Block Suez Canal, destination Rotterdam
+        3. Press Generate
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Where
+      description: Live site, a Cloudflare preview URL, or local (Docker / native) and the commit.
+      placeholder: "https://energy-supply-chain.pages.dev · Chrome 131 · desktop"
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Screenshots, console errors or API responses
+      description: The data-health panel state helps too.
+      render: text
