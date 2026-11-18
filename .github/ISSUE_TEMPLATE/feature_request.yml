@@ -1,0 +1,29 @@
+name: Feature or model change
+description: Suggest a new capability, or a change to a model, assumption or data source.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Who needs it and what decision it would support.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: For model changes, name the formula or constant and the source for the new value (see docs/algorithms.md).
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues and TECHNICAL_DEBT.md for this.
+          required: true

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/Inward17/Energy-Supply-Chain-Monitoring/security/advisories/new
+    about: Report privately — please don't open a public issue.
+  - name: How the numbers are calculated
+    url: https://github.com/Inward17/Energy-Supply-Chain-Monitoring/blob/main/docs/algorithms.md
+    about: Formulas and constants behind every score, before reporting a "wrong" value.
