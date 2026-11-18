@@ -1,0 +1,78 @@
+# Builds both images and boots the whole compose stack, so a Dockerfile,
+# compose or dependency change can't silently break `docker compose up`.
+# Pure smoke test: seeded Postgres + Neo4j + API + UI, no API keys, nothing
+# pushed anywhere.
+name: Docker
+
+on:
+  pull_request:
+    paths:
+      - "docker-compose.yml"
+      - "backend/Dockerfile"
+      - "backend/.dockerignore"
+      - "backend/requirements.txt"
+      - "frontend/Dockerfile"
+      - "frontend/.dockerignore"
+      - "frontend/nginx.conf"
+      - "frontend/package.json"
+      - "frontend/package-lock.json"
+      - "seed/**"
+      - ".github/workflows/docker.yml"
+  push:
+    branches: [main]
+    paths:
+      - "docker-compose.yml"
+      - "backend/Dockerfile"
+      - "backend/requirements.txt"
+      - "frontend/Dockerfile"
+      - "frontend/nginx.conf"
+      - "frontend/package-lock.json"
+      - "seed/**"
+      - ".github/workflows/docker.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  stack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Throwaway env file (no real keys)
+        run: |
+          sed -e 's/^DB_PASSWORD=.*/DB_PASSWORD=ci-postgres-password/' \
+              -e 's/^NEO4J_PASSWORD=.*/NEO4J_PASSWORD=ci-neo4j-password/' \
+              backend/.env.example > backend/.env
+          grep -E '^(DB|NEO4J)_PASSWORD=ci-' backend/.env
+
+      - name: Validate compose file
+        run: docker compose --env-file backend/.env --profile worker config -q
+
+      - name: Build and start the stack
+        run: docker compose --env-file backend/.env up -d --build --wait --wait-timeout 300
+
+      - name: Smoke test
+        run: |
+          set -e
+          curl -fsS http://127.0.0.1:8000/healthz
+          # Seeded Postgres answers a real data endpoint.
+          curl -fsS "http://127.0.0.1:8000/api/risk/events?limit=1" | head -c 300; echo
+          # Graph seeded (or seed fallback) — the reroute config list is non-empty.
+          curl -fsS http://127.0.0.1:8000/api/config/refineries | grep -q Jamnagar
+          # UI served by nginx, built against the published API port.
+          curl -fsS http://127.0.0.1:3000/ | grep -q "MERIDIAN"
+          curl -fsS http://127.0.0.1:3000/ -o /dev/null -D - | grep -qi "x-frame-options: DENY"
+
+      - name: Logs on failure
+        if: failure()
+        run: docker compose --env-file backend/.env logs --no-color --tail 200
+
+      - name: Tear down
+        if: always()
+        run: docker compose --env-file backend/.env down -v

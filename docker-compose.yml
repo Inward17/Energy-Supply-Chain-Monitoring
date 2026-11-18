@@ -1,3 +1,35 @@
+# Full local stack: Postgres + Neo4j + API + UI, and an opt-in ingestion worker.
+#
+#   cp backend/.env.example backend/.env      # set DB_PASSWORD, NEO4J_PASSWORD (+ API keys)
+#   docker compose --env-file backend/.env up -d --build
+#   open http://localhost:3000
+#
+#   # live ingestion (spends Gemini / AIS / news quota):
+#   docker compose --env-file backend/.env --profile worker up -d
+#
+# `--env-file backend/.env` feeds the ${...} substitutions below (DB_PASSWORD,
+# NEO4J_PASSWORD, ...); `env_file` passes the same file into the containers.
+# Every port binds to 127.0.0.1 only.
+
+x-backend: &backend
+  build: ./backend
+  image: meridian-backend
+  env_file:
+    - ./backend/.env
+  environment:
+    # Container-network addresses override the localhost values in .env.
+    DB_HOST: postgres
+    DB_PORT: "5432"
+    DB_SSLMODE: disable
+    NEO4J_URI: neo4j://neo4j:7687
+    LOG_TO_FILE: "0"
+  depends_on:
+    postgres:
+      condition: service_healthy
+    neo4j:
+      condition: service_healthy
+  restart: unless-stopped
+
 services:
   postgres:
     image: postgres:15-alpine
@@ -6,7 +38,7 @@ services:
     environment:
       POSTGRES_DB: energy_resilience
       POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set (shell env or repo-root .env)}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set (use --env-file backend/.env)}
     volumes:
       - ./seed/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
       - ./seed/postgres_dump.sql:/docker-entrypoint-initdb.d/02_seed.sql
@@ -25,17 +57,16 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      NEO4J_AUTH: "neo4j/${NEO4J_PASSWORD:?NEO4J_PASSWORD must be set (shell env or repo-root .env)}"
-      # Disable authentication prompt on first boot (password set via env above)
+      NEO4J_AUTH: "neo4j/${NEO4J_PASSWORD:?NEO4J_PASSWORD must be set (use --env-file backend/.env)}"
       NEO4J_PLUGINS: "[]"
-      # Performance tuning for a dev/demo instance
+      # Small heap: a dev/demo graph of ~60 nodes.
       NEO4J_dbms_memory_heap_initial__size: "256m"
       NEO4J_dbms_memory_heap_max__size: "512m"
     volumes:
       - neo4j_data:/data
     ports:
-      - "127.0.0.1:7474:7474"   # Neo4j Browser UI (localhost only)
-      - "127.0.0.1:7687:7687"   # Bolt protocol (localhost only)
+      - "127.0.0.1:7474:7474"   # Neo4j Browser
+      - "127.0.0.1:7687:7687"   # Bolt
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:7474 || exit 1"]
       interval: 10s
@@ -43,8 +74,44 @@ services:
       retries: 15
     restart: unless-stopped
 
+  # Read-only API. Seeds the Neo4j graph and verifies the schema on boot.
+  backend:
+    <<: *backend
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_SSLMODE: disable
+      NEO4J_URI: neo4j://neo4j:7687
+      LOG_TO_FILE: "0"
+      RUN_WORKER: "0"
+      CORS_ORIGINS: http://localhost:3000
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  # Hourly ingestion, same image. Opt-in because it calls metered APIs.
+  worker:
+    <<: *backend
+    command: ["python", "cron_worker.py"]
+    profiles: ["worker"]
+    # The image's healthcheck probes the API's /healthz, which the worker
+    # does not serve.
+    healthcheck:
+      disable: true
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Called from your browser, so it is the host-published API port.
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+        NEXT_PUBLIC_CARTO_KEY: ${NEXT_PUBLIC_CARTO_KEY:-}
+    image: meridian-frontend
+    ports:
+      - "127.0.0.1:3000:8080"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
 volumes:
   postgres_data:
-    driver: local
   neo4j_data:
-    driver: local
