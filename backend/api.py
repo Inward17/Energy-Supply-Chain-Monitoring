@@ -353,6 +353,9 @@ def get_live_metrics() -> dict[str, Any]:
             "market_source_date": sdi_data.get("market_source_date"),
             "computed_at":      sdi_data.get("computed_at"),
             "updated_at":       sdi_data.get("updated_at"),
+            # "seed" = Neo4j unreachable; graph-backed views use the built-in
+            # seed data, so the UI can say so instead of passing it off as live.
+            "graph_status":     "live" if get_driver() is not None else "seed",
         }
     except ValueError as exc:
         logger.warning("get_live_metrics degraded: %s", exc)
@@ -762,7 +765,8 @@ def run_reroute(req: RerouteRequest, request: Request) -> dict[str, Any]:
         pm = result.get("procurement_matrix", [])
         # Mark top pick for the UI
         for i, row in enumerate(pm):
-            row["top"] = (i == 0)
+            # Only a verified route is ever the top pick (see fixer_agent).
+            row["top"] = bool(row.get("recommended"))
         return {
             "procurement_matrix":   pm,
             "diagnostic":           result.get("diagnostic"),
@@ -838,13 +842,15 @@ def run_war_room(req: WarRoomRequest, request: Request) -> dict[str, Any]:
         )
         pm = fixer_result.get("procurement_matrix", [])
         diagnostic = fixer_result.get("diagnostic")
-        if not pm:
+        # SPR needs a confirmed arrival date, so only a verified route may set
+        # it. Unverified options never stand in for one.
+        top = next((r for r in pm if r.get("route_basis") == "verified"), None)
+        if top is None:
             if diagnostic:
                 return {"top_routes": [], "diagnostic": diagnostic}
             raise HTTPException(status_code=422, detail="No viable reroute alternatives found in graph DB.")
 
-        top = pm[0]
-        lead_time = float(top.get("lead_time_days", 22))
+        lead_time = float(top["lead_time_days"])
 
         # Step 2: SPR
         spr = calculate_spr_impact(
@@ -898,6 +904,7 @@ def run_war_room(req: WarRoomRequest, request: Request) -> dict[str, Any]:
                     "lead":     f"{float(r.get('lead_time_days', 0)):.1f} days",
                     "match_type": r.get("match_type", "exact"),
                     "match_reason": r.get("match_reason", ""),
+                    "route_basis": r.get("route_basis", "estimated"),
                 }
                 for r in pm[:5]
             ],

@@ -145,10 +145,14 @@ row and counts at full severity.
    lead_time_days = restricted_sea_km / 1.852 / (13 kn × 24)        → route_basis "verified"
    ```
 
-   Where no restriction exists (Malacca, Cape of Good Hope) the unrestricted
-   route plus a static detour is used and labelled `unverified`. No
-   coordinates → the port's India baseline (if shipping to India) or an
-   8,000 NM fallback, labelled `estimated`.
+   Malacca and the Cape of Good Hope cannot be restricted, so the
+   unrestricted route's geometry is checked against a box around the passage:
+   a route that stays out of it is `verified`. Everything else is `unverified`
+   (unrestricted route + static detour): a route crossing an unrestrictable
+   passage, no path around the blockade (searoute reports length 0/inf rather
+   than failing — treated as no route, never a 0-day voyage), or an engine
+   error. No coordinates → the port's India baseline (if shipping to India) or
+   an 8,000 NM fallback, labelled `estimated`.
 4. **Landed cost.**
 
    ```text
@@ -166,8 +170,14 @@ row and counts at full severity.
    ```
 
 7. **Ranking.** `cost` (cheapest landed), `speed` (fastest arrival) or
-   `balanced` (composite). The Recommended card states which.
-8. **Sanctions.** Rows whose country (or any blend leg) is in
+   `balanced` (composite), then a stable re-sort puts `verified` rows first.
+   Only a verified row can be `recommended`; with none, nothing is recommended
+   and the diagnostic is `no_verified_route`. The War Room uses the
+   recommended row's lead time for SPR, so an unverified estimate never
+   becomes an arrival date.
+8. **Exclusions.** A blend row ("Iran + Iraq") is dropped if *any* leg's
+   country is excluded (case- and whitespace-insensitive).
+9. **Sanctions.** Rows whose country (or any blend leg) is in
    `SANCTIONED_SOURCE_COUNTRIES` carry `sanctioned: true` and a badge. They are
    labelled, not filtered; exclusions remain the user's choice. A country list
    is not sanctions screening.

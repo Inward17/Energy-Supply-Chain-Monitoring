@@ -47,6 +47,8 @@ interface Ctx extends Snapshot {
   /** Per-feed failure on the last refresh, so a page can show an error
    *  instead of loading forever when only its own feed fails. */
   feedFailed: Partial<Record<FeedKey, boolean>>
+  /** When each feed last loaded successfully (ISO time), for staleness notes. */
+  feedOkAt: Partial<Record<FeedKey, string>>
   lastOk: string | null
   refresh: () => Promise<void>
   filters: Filters
@@ -67,6 +69,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState(false)
   const [feedFailed, setFeedFailed] = useState<Partial<Record<FeedKey, boolean>>>({})
+  const [feedOkAt, setFeedOkAt] = useState<Partial<Record<FeedKey, string>>>({})
   const [lastOk, setLastOk] = useState<string | null>(null)
   const [filters, setF] = useState<Filters>({ region: "All regions", minSeverity: 0, autoRefresh: true })
   const inflight = useRef<Promise<void> | null>(null)
@@ -98,6 +101,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setFeedFailed({
         live: rej(live), events: rej(events), chokepoints: rej(chokepoints), producers: rej(producers),
         timeline: rej(timeline), market: rej(market), vessels: rej(vessels),
+      })
+      const now = new Date().toISOString()
+      const settled = { live, events, chokepoints, producers, timeline, market, vessels }
+      setFeedOkAt((prev) => {
+        const next = { ...prev }
+        for (const [k, r] of Object.entries(settled)) if (r.status === "fulfilled") next[k as FeedKey] = now
+        return next
       })
       const ok = live.status === "fulfilled"
       setFailed(!ok)
@@ -152,7 +162,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   )
 
   return (
-    <DataCtx.Provider value={{ ...snap, loading, failed, feedFailed, lastOk, refresh, filters, setFilters, visibleEvents }}>
+    <DataCtx.Provider value={{ ...snap, loading, failed, feedFailed, feedOkAt, lastOk, refresh, filters, setFilters, visibleEvents }}>
       {children}
     </DataCtx.Provider>
   )
@@ -220,6 +230,18 @@ export function feedHealth(live: LiveMetrics | null): Feed[] {
   feeds.push({ key: "brent", name: "Brent · ICE close", state: mkState, detail: live.market_source_date ?? "—", feeds: `price · ${Math.round((live.w3 ?? 0.1) * 100)}%`, at: live.market_source_date })
   feeds.push({ key: "freight", name: "Freight · BOAT ETF", state: mkState, detail: live.market_source_date ?? "—", feeds: `freight · ${Math.round((live.w4 ?? 0.15) * 100)}%`, at: live.market_source_date })
 
+  if (live.graph_status) {
+    feeds.push({
+      key: "graph",
+      name: "Knowledge graph",
+      state: live.graph_status === "live" ? "ok" : "stale",
+      detail: live.graph_status === "live"
+        ? "Neo4j connected"
+        : "Neo4j unreachable — reroute uses built-in seed data; port congestion is not live.",
+      feeds: "reroute · ports and grades",
+    })
+  }
+
   feeds.push({
     key: "gemini",
     name: "Gemini scoring",
@@ -230,8 +252,8 @@ export function feedHealth(live: LiveMetrics | null): Feed[] {
 }
 
 export function healthSummary(live: LiveMetrics | null, failed: boolean) {
-  if (failed) return { level: "offline" as const, label: "Backend offline", live: 0, total: 5, problems: [] as Feed[] }
-  if (!live) return { level: "checking" as const, label: "Checking…", live: 0, total: 5, problems: [] as Feed[] }
+  if (failed) return { level: "offline" as const, label: "Backend offline", live: 0, total: 6, problems: [] as Feed[] }
+  if (!live) return { level: "checking" as const, label: "Checking…", live: 0, total: 6, problems: [] as Feed[] }
   const feeds = feedHealth(live)
   const problems = feeds.filter((f) => f.state !== "ok")
   const ok = feeds.length - problems.length
