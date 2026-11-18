@@ -28,7 +28,7 @@ IMF PortWatch, CARTO/Esri map tiles.
 | `src/database/neo4j_graph.py` | Driver w/ reconnect cooldown, `seed_graph()` (MERGE-only) |
 | `src/ingestion/*` | gdelt_collector (3-way query rotation), news_providers (fallbacks + daily quota table), market/freight trawlers, ais_streamer, portwatch |
 | `src/utils/` | constants (aliases, SDI bands), metrics (weights), schemas (bounded pydantic), rate_limit |
-| `tests/` | ~140 pytest tests; conftest wraps each test in a rolled-back transaction |
+| `tests/` | ~180 pytest tests; conftest wraps each test in a rolled-back transaction |
 
 Endpoints: `/healthz` (no DB), `/api/metrics/live`, `/api/risk/{events,events/{id},chokepoints[/{name}],producers[/{name}],sdi-timeline}`,
 `/api/market/{prices,vessels}`, `/api/config/{chokepoints,refineries,grades}`,
@@ -48,3 +48,4 @@ Endpoints: `/healthz` (no DB), `/api/metrics/live`, `/api/risk/{events,events/{i
 - `tests/smoke.spec.ts` — Playwright vs `out/`, API pointed at a closed port.
 
 Design source: Claude Design canvases, copies in `docs/design/meridian-v1|v2/`.
+Formulas and constants: `docs/algorithms.md` (the July `.docx` guide is stale).

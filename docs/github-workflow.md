@@ -2,7 +2,7 @@
 
 How changes travel from your laptop to production, what each GitHub feature
 does along the way, and how it connects to Cloudflare Pages, Render and Neon.
-The last section walks you through the first real PR: shipping the new UI.
+Section 7 walks through a PR end to end.
 
 ---
 
@@ -28,6 +28,8 @@ The last section walks you through the first real PR: shipping the new UI.
                                         Merge to main ─────────────►  Cloudflare Pages  → energy-supply-chain.pages.dev
                                                                     ─►  Render (after CI) → backend API
                                                                           └─ Neon: PR's database branch deleted
+
+ every hour, on main:  ingest.yml ──► cron_worker.py --once --with ais ──► Neon / AuraDB
 ```
 
 The rule that makes it all work: **`main` is always deployable.** Nothing
@@ -65,10 +67,11 @@ automatic, because anything on `main` has already been verified.
 | `.github/workflows/frontend-ci.yml` | On every PR: typecheck → static build (exactly what Cloudflare deploys) → Playwright smoke tests on desktop and phone sizes. It skips itself in seconds when `frontend/` is untouched, so it can be a *required* check without blocking backend-only PRs. On failure it uploads the Playwright report as an artifact. |
 | `frontend/tests/smoke.spec.ts` | 5 tests: the shell loads; every page renders without a crash; the sidebar shows on desktop; the 5-tab bar shows on phones with no sideways scroll on any page; the theme toggle persists across reloads. The app is built against a closed port, so tests need no backend, database or secrets. |
 | `frontend/playwright.config.ts` | Serves `out/` with Python's built-in HTTP server, and runs a desktop (1440×900) and a phone (Pixel 5) project. |
-| `.github/workflows/backend-ci.yml` | On every PR touching `backend/`: Python 3.13 (matches the Dockerfile) → `pip install` → `pytest` (127 tests). The database is a **Neon branch per PR** when Neon is configured, otherwise a throwaway Postgres container on the runner (see §4). Like frontend CI, it always reports, so it can be required. |
+| `.github/workflows/backend-ci.yml` | On every PR touching `backend/`: Python 3.13 (matches the Dockerfile) → `pip install` → `pytest` (~180 tests). The database is a **Neon branch per PR** when Neon is configured, otherwise a throwaway Postgres container on the runner (see §4). Like frontend CI, it always reports, so it can be required. |
 | `.github/workflows/neon-cleanup.yml` | When a PR is merged or closed, deletes its Neon branch `ci/pr-<number>`. |
 | `.github/workflows/codeql.yml` | Security scan of TypeScript and Python on PRs, on `main`, and weekly. Ignores `legacy/`. |
-| `.github/dependabot.yml` | Weekly grouped upgrade PRs for `frontend/` (npm) and `backend/` (pip); monthly for GitHub Actions. |
+| `.github/workflows/ingest.yml` | Hourly data ingestion against production (Neon + AuraDB), independent of the Render instance sleeping. Skips itself until the database secrets exist. See `DEPLOYMENT.md` §4. |
+| `.github/dependabot.yml` | Weekly grouped upgrade PRs for `frontend/` (npm) and `backend/` (pip); monthly for GitHub Actions. Ignore rules hold back upgrades known to break: TypeScript 7 and `@types/node` majors, `google-genai` 3 (its default API version 404s our model) and the `websockets` / `tenacity` versions that need it. |
 | `.github/pull_request_template.md` | What / how to verify / checklist / deployment notes. |
 | `.github/CODEOWNERS` | `@Inward17` owns everything (auto-requested as reviewer). |
 | `backend/api.py` → `CORS_ORIGIN_REGEX` | Lets Cloudflare **preview** URLs (`https://<hash>.energy-supply-chain.pages.dev`) call the API. Without it, previews load but every API call is blocked. |
@@ -142,6 +145,10 @@ missed.
      `NEON_DATABASE` (default `neondb`), `NEON_ROLE` (default `neondb_owner`),
      `NEON_PARENT_BRANCH` (default: the project's primary branch).
 
+> **Known issue:** branch creation currently returns HTTP 412 and CI falls
+> back to the container (see `TECHNICAL_DEBT.md`). The job summary says which
+> database a run used.
+
 **Until those exist, and always for forked or Dependabot PRs** (GitHub never
 gives them secrets), backend CI uses a throwaway Postgres container instead.
 The check still runs; it just doesn't use production-like data. The job
@@ -181,48 +188,51 @@ Bot comments are suggestions, not orders. You decide what to apply.
 
 ---
 
-## 7. Hands-on: ship the new UI as your first PR
-
-The new UI is in your working tree but not on GitHub yet. That makes it the
-perfect first PR.
+## 7. Hands-on: a PR from start to finish
 
 ```bash
-# 1. Branch off main
-git switch -c feat/meridian-ui
-
-# 2. Stage everything (new UI, legacy folder, .github, docs, CORS change)
-git add -A
-git status            # read it: no .env files should appear
-
-# 3. Commit
-git commit -m "feat: MERIDIAN UI — new frontend with CI, previews and PR tooling"
-
-# 4. Push the branch
-git push -u origin feat/meridian-ui
-
-# 5. Open the PR (the template fills the description)
+git switch main && git pull
+git switch -c fix/short-name
+# …edit…
+cd backend && python -m pytest -q
+cd ../frontend && npm run typecheck && npm run test:e2e
+git add <files>               # never .env; check `git status` first
+git commit -m "fix: what changed"
+git push -u origin fix/short-name
 gh pr create --base main --fill
-gh pr view --web
 ```
 
 Then watch the parts connect:
 
-1. **Checks tab:** `Frontend CI / verify`, `Backend CI / test`, two `CodeQL` jobs and `Cloudflare Pages` start. Click a running job to see each step's log. The Backend CI summary shows whether it ran on a Neon branch or the fallback container. Add the Neon secret/variable (§4) before opening the PR to see branching on the first run.
-2. **Cloudflare's comment:** open the preview URL. Until `CORS_ORIGIN_REGEX` is set on Render and the Preview env vars on Cloudflare, it will show "Backend offline". That is expected, and the honest status badge tells you so.
-3. **Review it yourself:** Files changed tab → leave a line comment on something → "Finish your review" → Comment. That's the full review flow.
-4. **Break it on purpose (optional):** push a commit that introduces a type error and watch `verify` turn red and block the merge. Revert it and watch it go green.
-5. **Merge:** "Squash and merge" (one clean commit on `main`). Delete the branch when prompted.
-6. **Watch CD:** Cloudflare deploys production. Render redeploys too, because `backend/api.py` changed.
-7. **Then set up the ruleset** (section 6). The `verify` check now exists to select.
+1. **Checks tab:** `verify`, `test`, two `CodeQL` jobs and `Cloudflare Pages`
+   start. A failing step's log: `gh run view --log-failed`.
+2. **Cloudflare's comment:** open the preview URL and click through.
+3. **Review:** Files changed → line comments → Finish your review.
+4. **Merge** when green. Cloudflare deploys production; Render deploys after
+   CI if `backend/` changed.
+
+### Stacked PRs (one PR built on another)
+
+If PR B branches from PR A, set B's base to A's branch so its diff shows only
+its own commits. **Merge A without deleting its branch first**, or retarget B
+to `main` before deleting it: GitHub *closes* a PR whose base branch is
+deleted rather than retargeting it, and a closed PR with a deleted base cannot
+be reopened. (That is how #33 became #34.)
+
+### Dependabot PRs
+
+They run the same checks. Bot comments such as `@dependabot rebase` work, but
+a closed Dependabot PR plus an `ignore` rule in `dependabot.yml` is the durable
+way to hold back a breaking upgrade.
 
 Useful `gh` commands:
 
 ```bash
 gh pr status                 # your PRs and their check state
-gh pr checks                 # checks for the current branch's PR
+gh pr checks <n> --watch     # wait for a PR's checks
 gh run list --limit 5        # recent workflow runs
 gh run view --log-failed     # logs of the failing step
-gh pr merge --squash --delete-branch
+gh pr merge <n> --merge --delete-branch
 ```
 
 ---

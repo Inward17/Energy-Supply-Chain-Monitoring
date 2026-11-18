@@ -1,8 +1,10 @@
-# Energy Supply Chain Resilience OS
+# MERIDIAN — Energy Supply Chain Resilience OS
 
-> **An AI-powered, real-time energy supply chain intelligence platform that turns crisis response into a managed, anticipatory process.**
+> **An AI-assisted energy supply chain intelligence platform that turns crisis response into a managed, anticipatory process.**
 
-Built for India's national energy security challenge: detecting geopolitical disruptions, re-routing crude oil procurement, projecting Strategic Petroleum Reserve (SPR) depletion, and generating an executive Emergency Action Plan — all in seconds.
+Built for India's energy security problem: detecting geopolitical disruptions, re-routing crude procurement around blocked chokepoints, projecting Strategic Petroleum Reserve (SPR) depletion, and drafting an executive Emergency Action Plan.
+
+**Live:** <https://energy-supply-chain.pages.dev> · API: `https://energy-supply-chain-backend.onrender.com`
 
 ---
 
@@ -19,81 +21,70 @@ Built for India's national energy security challenge: detecting geopolitical dis
    - [Database Layer](#database-layer)
    - [Agent Layer](#agent-layer)
    - [Utilities](#utilities)
-7. [Dashboard Tabs](#dashboard-tabs)
-8. [The Shadow Cache Architecture](#the-shadow-cache-architecture)
-9. [Setup & Running](#setup--running)
-   - [Option A — Docker (Recommended)](#option-a--docker-recommended)
-   - [Option B — Manual Setup](#option-b--manual-database-setup-without-docker)
-10. [Environment Variables](#environment-variables)
+7. [Dashboard Pages](#dashboard-pages)
+8. [Design System](#design-system)
+9. [The Shadow Cache Architecture](#the-shadow-cache-architecture)
+10. [Setup & Running](#setup--running)
+11. [Environment Variables](#environment-variables)
+12. [Deployment, CI and Further Docs](#deployment-ci-and-further-docs)
 
 ---
 
 ## What This Is
 
-India imports over 85% of its crude oil. Its Strategic Petroleum Reserves provide roughly **9.5 days of national consumption cover**. A blockade at the Strait of Hormuz — through which 40% of India's crude transits — creates a clock that starts ticking the moment the blockade is confirmed.
+India imports over 85% of its crude oil. Its Strategic Petroleum Reserve holds about **39 million barrels — roughly 7 days of national consumption**. A blockade at the Strait of Hormuz, through which about 40% of India's crude transits, starts a clock the moment it is confirmed.
 
-This platform is a **multi-agent AI command centre** that:
+The platform:
 
-- **Watches** global news in real time (GDELT API → Gemini 2.5 Flash scoring)
-- **Detects** shipping anomalies via live AIS vessel telemetry (AISStream.io)
-- **Routes** replacement shipments around the blockade through a Neo4j knowledge graph
-- **Calculates** the exact financial cost and lead time of every alternative
-- **Projects** how many days India's SPR survives, and the GDP/inflation shock if reserves run dry
-- **Generates** a boardroom-ready Emergency Action Plan using Gemini
+- **Watches** energy news (GDELT, with NewsData / GNews / NewsAPI fallbacks) and scores it with Gemini
+- **Detects** shipping anomalies from live AIS vessel telemetry (AISStream.io)
+- **Routes** replacement supply around the blockade using a Neo4j knowledge graph and real sea routes
+- **Calculates** landed cost and lead time for every alternative, and says when a route could not be verified
+- **Projects** how long the SPR lasts, with and without demand-management levers, and the GDP/inflation cost of any gap
+- **Drafts** an Emergency Action Plan with Gemini (the deterministic numbers render first; the narrative follows)
+
+Every model states its assumptions next to its result. How each number is calculated is documented in [`docs/algorithms.md`](docs/algorithms.md).
 
 ---
 
 ## Architecture Overview
 
 ```text
-┌─────────────────────────────────────────────────────────────────────┐
-│                         EXTERNAL WORLD                              │
-│   GDELT News API    AISStream.io WebSocket    Yahoo Finance API     │
-└──────────┬───────────────────┬───────────────────┬─────────────────┘
-           │                   │                   │
-           ▼                   ▼                   ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                     INGESTION LAYER (cron_worker.py)                │
-│  gdelt_collector.py    ais_streamer.py    market_trawler.py         │
-│  (News Headlines)      (Vessel Positions) (OHLCV Prices)            │
-└──────────┬───────────────────┬───────────────────┬─────────────────┘
-           │                   │                   │
-           ▼                   ▼                   ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                 LOCAL SHADOW CACHE (Zero-latency reads)             │
-│  PostgreSQL                               Neo4j Graph DB            │
-│  ├── news_cache                           ├── Chokepoint nodes      │
-│  ├── risk_events                          ├── ExportPort nodes      │
-│  ├── vessel_telemetry                     ├── Refinery nodes        │
-│  └── market_prices                        ├── CrudeGrade nodes      │
-│                                           └── SHIPS_THROUGH edges   │
-└──────────┬────────────────────────────────────┬────────────────────┘
-           │                                    │
-           ▼                                    ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                        AGENT LAYER                                  │
-│                                                                     │
-│  sentinel_agent.py      modeler_agent.py     fixer_agent.py        │
-│  (Gemini: Score News)   (SDI Math)           (Graph Rerouting)     │
-│                                                                     │
-│  spr_agent.py           briefing_agent.py                          │
-│  (SPR Burn-Down)        (Gemini: Write Brief)                      │
-└──────────┬─────────────────────────────────────────────────────────┘
-           │
+┌──────────────────────────────────────────────────────────────────────┐
+│                          EXTERNAL WORLD                              │
+│  GDELT · NewsData · GNews · NewsAPI   AISStream.io   Yahoo Finance   │
+│  IMF PortWatch                        Gemini API                     │
+└──────────┬─────────────────────┬──────────────────┬─────────────────┘
+           ▼                     ▼                  ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│  INGESTION — cron_worker.py, run hourly by GitHub Actions (ingest.yml)│
+│  or in-process on the API with RUN_WORKER=1                          │
+│  market · freight · news · Sentinel scoring · SDI snapshot · AIS     │
+└──────────┬───────────────────────────────────────────────────────────┘
            ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                 REACT / NEXT.JS DASHBOARD (UI)                      │
-│  Tab 1: Threat Map   Tab 2: Risk Intelligence   Tab 3: Market Pulse │
-│  Tab 4: Reroute Matrix   Tab 5: SPR Optimizer   Tab 6: War Room     │
-└─────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                 SHADOW CACHE (the only thing the API reads)          │
+│  PostgreSQL (Neon in prod)               Neo4j (AuraDB in prod)      │
+│  news_cache · risk_events ·              Chokepoint · ExportPort ·   │
+│  vessel_telemetry · market_prices ·      Refinery · CrudeGrade ·     │
+│  sdi_snapshots · backtest_jobs           SHIPS_THROUGH · EXPORTS     │
+└──────────┬───────────────────────────────────────────────────────────┘
+           ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│  FastAPI (api.py) on Render — agents                                 │
+│  modeler (SDI) · fixer (reroute) · spr (burn-down) · briefing (LLM)  │
+└──────────┬───────────────────────────────────────────────────────────┘
+           ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│  MERIDIAN UI — Next.js static export on Cloudflare Pages             │
+│  Overview · Threat Map · Risk · Markets · Reroute · SPR · War Room · │
+│  History                                                             │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Core Design Principle: Shadow Cache Architecture
 
-Every external API is hit **only in the background** (cron_worker.py). The React UI **never blocks on a live API call**. This means:
-- The dashboard loads in milliseconds regardless of external API state
-- A GDELT rate-limit or AIS outage is invisible to the end user
-- All agents read from local Postgres/Neo4j — zero latency, zero cost
+External data APIs are called **only by the ingestion job**. The dashboard reads Postgres and Neo4j, so a GDELT rate limit or an AIS outage shows up as a stale or "no data" feed in the data-health panel, never as a hung page. The one exception is the War Room brief, which calls Gemini on request; it is rate-limited and cached for 30 minutes per scenario.
 
 ---
 
@@ -101,19 +92,20 @@ Every external API is hit **only in the background** (cron_worker.py). The React
 
 | Layer | Technology | Purpose |
 |---|---|---|
-| UI | React (Next.js) | Interactive dashboard, rich data visualizations (Recharts, Tailwind) |
-| Backend API | FastAPI | REST bridge connecting the UI to the intelligence agents |
-| Intelligence | Google Gemini 2.5 Flash | News scoring, Executive Briefing |
-| Graph DB | Neo4j | Supply chain routing knowledge graph |
-| Relational DB | PostgreSQL | Time-series cache (news, prices, vessels) |
-| ORM/DB | SQLAlchemy + psycopg2 | Connection pooling, query abstraction |
-| Marine Routing | `searoute` | Real nautical distance calculations |
-| Financial Data | `yfinance` | Brent Crude, NG, USO, XLE prices |
-| News Data | GDELT Doc 2.0 API | Primary headline source (free, no auth) |
-| News Fallback | NewsData.io / GNews / NewsAPI | Take over when GDELT rate-limits |
-| Vessel Data | AISStream.io WebSocket | Live AIS tanker positions |
-| Resilience | `tenacity` | Exponential backoff on all external APIs |
-| Scheduling | `schedule` | Cron loop for the ingestion pipeline |
+| UI | Next.js 16 (static export), React 19, Tailwind CSS 4 | MERIDIAN dashboard, dark + light, desktop + mobile |
+| Maps / charts | Leaflet (CARTO or Esri tiles), hand-built SVG charts | Threat map, sparklines, burn-down and SDI charts |
+| Backend API | FastAPI + Pydantic | REST API, bounded request schemas, rate limits |
+| Intelligence | Gemini (`GEMINI_MODEL`, default `gemini-flash-latest`) | News scoring, War Room brief; falls back to a lighter model on 503 |
+| Graph DB | Neo4j | Supply chain knowledge graph |
+| Relational DB | PostgreSQL | News, events, prices, vessels, SDI snapshots, backtests |
+| ORM/DB | SQLAlchemy + psycopg2 | Connection pooling, query layer |
+| Marine routing | `searoute` | Sea-lane distances, with blocked passages restricted |
+| Market data | `yfinance` | Brent, Henry Hub, USO, XLE, BOAT (freight proxy) |
+| News | GDELT Doc 2.0 + NewsData.io / GNews / NewsAPI | Headlines, with keyed fallbacks when GDELT throttles |
+| Vessels | AISStream.io WebSocket | Live tanker positions |
+| Resilience | `tenacity` | Exponential backoff on external calls |
+| Hosting | Cloudflare Pages · Render · Neon · Neo4j AuraDB | Free-tier production stack |
+| CI | GitHub Actions | Frontend/backend CI, CodeQL, hourly ingestion, Dependabot |
 
 ---
 
@@ -121,80 +113,70 @@ Every external API is hit **only in the background** (cron_worker.py). The React
 
 ```text
 energy-supply-chain/
-│
-├── backend/                        # Python API and AI Agents
-│   ├── api.py                      # FastAPI bridge to the UI
-│   ├── cron_worker.py              # Background pipeline scheduler (Shadow Cache heartbeat)
-│   ├── requirements.txt            # Python dependencies
-│   ├── .env                        # All backend secrets and tuning knobs (never committed)
+├── backend/                        # Python API, agents and ingestion
+│   ├── api.py                      # FastAPI app: routes, CORS, rate limits, error mapping
+│   ├── cron_worker.py              # Ingestion pipeline (scheduled, --once, --with ...)
+│   ├── run_backtest.py             # Historical replay of past crises
+│   ├── Dockerfile                  # Image used by Render
+│   ├── requirements.txt            # Exact pins; Dependabot proposes bumps
+│   ├── tests/                      # ~180 pytest tests
 │   └── src/
-│       ├── agents/                 # Logic agents (fixer, modeler, sentinel, spr, briefing)
-│       ├── database/               # PostgreSQL & Neo4j driver layer
-│       ├── ingestion/              # Data trawlers (GDELT, AIS, yfinance)
-│       └── utils/                  # Domain constants and math metrics
+│       ├── agents/                 # sentinel, modeler, fixer, spr, briefing
+│       ├── database/               # PostgreSQL & Neo4j layers
+│       ├── ingestion/              # GDELT, news fallbacks, AIS, market, freight, PortWatch
+│       └── utils/                  # constants, metrics, schemas, rate_limit
 │
-├── frontend/                       # MERIDIAN UI (Next.js, static export) — dark + light, desktop + mobile
-│   ├── components/m/               # Shell, data layer, charts, detail drawer
+├── frontend/                       # MERIDIAN UI (Next.js static export)
+│   ├── app/                        # Layout, pre-paint theme script, globals.css tokens
+│   ├── components/m/               # Shell (hash router), data provider, charts, drawer
 │   ├── components/m/pages/         # Overview, Threat Map, Risk, Market, Reroute, SPR, War Room, History
-│   ├── lib/                        # API fetcher utility (api.ts)
-│   ├── app/                        # Next.js entry, theme tokens (globals.css)
-│   └── package.json                # Node dependencies
+│   ├── lib/api.ts                  # Typed API client (timeouts on every request)
+│   ├── public/_headers             # CSP and security headers for Cloudflare Pages
+│   └── tests/smoke.spec.ts         # Playwright smoke tests (desktop + phone)
 │
-└── legacy/frontend/                # Previous UI, kept for side-by-side comparison (not deployed)
+├── docs/                           # algorithms.md, github-workflow.md, design canvases
+├── .github/                        # Workflows, Dependabot, CODEOWNERS, PR template
+├── seed/                           # Postgres schema + historical seed data
+├── legacy/frontend/                # Previous UI, kept for comparison (not deployed)
+├── DEPLOYMENT.md                   # Production runbook
+└── TECHNICAL_DEBT.md               # Known gaps and their status
 ```
 
 ---
 
 ## Data Flow: End-to-End Pipeline
 
-### Phase 1 — Ingestion (runs every 60 minutes via cron_worker.py)
+### Phase 1 — Ingestion (hourly)
 
 ```text
-GDELT API ──────────────► gdelt_collector.py ──► news_cache (Postgres)
-                           (50 articles / 3-day window)
-
-AISStream.io WebSocket ──► ais_streamer.py ──────► vessel_telemetry (Postgres)
-                           (120s snapshot per cycle)
-
-Yahoo Finance API ────────► market_trawler.py & ───► price_history (Postgres)
-                           freight_trawler.py 
-                           (60-day OHLCV history)
+yfinance ───────────────► market_trawler / freight_trawler ──► market_prices
+GDELT (3 rotating queries) ─► gdelt_collector ──► news_cache
+   └─ on 429: NewsData → GNews → NewsAPI (daily quotas tracked in provider_quota)
+AISStream WebSocket ────► ais_streamer (600 s window, 429 retry) ──► vessel_telemetry
+IMF PortWatch (12 h) ───► portwatch_trawler ──► port congestion on ExportPort nodes
 ```
 
-### Phase 2 — Intelligence (triggered by cron cycle, after ingestion)
+### Phase 2 — Intelligence (same run, after ingestion)
 
 ```text
-news_cache (unprocessed)
-    │
+news_cache (unprocessed, up to 10)
     ▼
-sentinel_agent.py ──────► Gemini 2.5 Flash ──────► risk_events (Postgres)
-                          (batch of 5 headlines)     (region, severity, chokepoints, SDI)
+sentinel_agent ──► Gemini ──► risk_events (one row per incident, with its own sources)
+    ▼
+modeler_agent ──► sdi_snapshots (the canonical SDI timeline)
 ```
 
-### Phase 3 — User Query (on-demand, milliseconds, no external calls)
+### Phase 3 — User query (on demand, no external calls except the War Room brief)
 
 ```text
-User selects "Blocked Chokepoint" + "Destination Refinery"
-    │
+Blocked chokepoint + destination refinery
     ▼
-fixer_agent.py (5 steps):
-  Step 1: Neo4j query ─────────────────────► Refineries compatible with crude grade
-  Step 2: Neo4j query ─────────────────────► Export ports that bypass the blockade
-  Step 3: Postgres query + VLCC math ──────► Landed Cost (Brent + freight premium)
-  Step 4: searoute(port → refinery) ───────► Real nautical distance → lead time (days)
-  Step 5: Composite scoring ───────────────► Ranked procurement matrix
-    │
+fixer_agent:   compatible grades → bypassing terminals → restricted sea route
+               → landed cost → decayed supplier risk → ranked matrix
     ▼
-spr_agent.py:
-  Daily shortfall (from chokepoint import share) + lead_time_days
-  ────────────────────────────────────────────► Burn-down trajectory (pandas DataFrame)
-  ────────────────────────────────────────────► Supply gap days + GDP/inflation impact
-    │
+spr_agent:     shortfall → burn-down with ramping levers → gap + macro impact
     ▼
-briefing_agent.py (War Room only):
-  Procurement matrix row #1 + SPR outputs
-  ────────────────────────────────────────────► Gemini 2.5 Flash
-  ────────────────────────────────────────────► 3-paragraph Emergency Action Plan
+briefing_agent (War Room only): Gemini Emergency Action Plan, cached 30 min
 ```
 
 ---
@@ -205,29 +187,43 @@ briefing_agent.py (War Room only):
 
 ---
 
-#### `api.py` — FastAPI Bridge
-The serving layer. Exposes all Python agent logic (fixer, spr, sentinel, briefing) as REST endpoints that the React frontend calls via `fetch()`.
+#### `api.py` — FastAPI app
 
-- **Never** makes external network requests directly — all data comes from Postgres/Neo4j
-- Provides cleanly-typed JSON responses via Pydantic schemas (e.g. `RerouteRequest`, `WarRoomRequest`)
+Exposes the agents as REST endpoints for the UI.
+
+- Reads only Postgres/Neo4j (the War Room brief is the one Gemini call).
+- Requests are Pydantic models with bounded fields; chokepoint names are
+  validated against the registry (aliases like "Hormuz" resolve), unknown
+  refineries and chokepoints are 422.
+- Errors are fixed public strings: 503 when the database is down or a matrix
+  is degraded, 500 otherwise; internals never leak.
+- Spend controls in `src/utils/rate_limit.py`: War Room 5/client + 30 global
+  per hour, backtests 2 + 4 per hour, model endpoints 30 + 300 per minute.
+- `/healthz` touches no database so an uptime pinger never keeps Neon awake.
+
+Endpoints: `/healthz`, `/api/metrics/live`,
+`/api/risk/{events,events/{id},chokepoints[/{name}],producers[/{name}],sdi-timeline}`,
+`/api/market/{prices,vessels}`, `/api/config/{chokepoints,refineries,grades}`,
+`POST /api/orchestrator/{reroute,spr,war-room}`, `/api/backtest/{jobs,trigger,{event}}`.
 
 ---
 
-#### `cron_worker.py` — Background Pipeline Scheduler
-The engine that keeps the Shadow Cache fresh. Runs in a separate terminal alongside `npm run dev`.
+#### `cron_worker.py` — Ingestion pipeline
 
-**Pipeline steps** (sequential, every `CRON_INTERVAL_MINUTES` — default 60 min):
-
-| Step | Module | What It Does |
+| Job | Cadence | Steps |
 |---|---|---|
-| 1 | `market_trawler` | Downloads Brent/NG/XLE/USO OHLCV data |
-| 2 | `gdelt_collector` | Fetches last 3 days of energy news headlines |
-| 3 | `ais_streamer` | Opens WebSocket, collects vessel positions for 120s |
-| 4 | `sentinel_agent` | Sends unprocessed headlines to Gemini for risk scoring |
+| Cycle | `CRON_INTERVAL_MINUTES` (60) | market → freight → news → Sentinel → SDI snapshot |
+| AIS | `AIS_INTERVAL_MINUTES` (60) | AIS snapshot → SDI snapshot |
+| PortWatch | 12 h | port congestion |
+| Retention | 24 h | trim old vessel telemetry |
 
-- Uses an in-process lock (`_running` boolean) to prevent overlapping cycles on Windows
-- Logs all steps to both `stdout` and `cron_worker.log`
-- `--once` flag for single-pass validation; `--backfill` for 24h news catch-up
+- Each scheduled step runs in its own thread with a per-step lock, so one
+  stalled API cannot block the others; a cross-process file lock stops two
+  workers running at once.
+- `--once` runs one cycle and exits; `--once --with ais,portwatch,retention`
+  adds the timer jobs (this is what the GitHub Actions `ingest` workflow runs).
+- `--backfill` loads 24 h of news.
+- With `RUN_WORKER=1` the API runs the same scheduler in-process.
 
 ---
 
@@ -239,25 +235,21 @@ The engine that keeps the Shadow Cache fresh. Runs in a separate terminal alongs
 
 Queries the **GDELT Doc 2.0 API** (free, no auth) for energy-relevant news.
 
-- **Query**: searches for `"Strait of Hormuz" OR "Suez Canal" OR "crude oil" OR "oil tanker"` etc.
-- **Credibility Tiering**: Prioritizes high-credibility global (60%) and industry (20%) sources (e.g., Reuters, Bloomberg, OilPrice).
-- **Deduplication**: inserts only new URLs using `ON CONFLICT DO NOTHING`
-- **Rate limiting**: GDELT throttles hard per IP. A 429 is *not* retried in-cycle
-  (that extends the block); the next scheduled cycle is the retry, and the
-  keyed providers in `news_providers.py` cover the gap
-- **Query rotation**: three queries alternate across cycles — A (maritime
-  chokepoints), B (producer-nation supply events), C (physical disruption:
-  storm / fire / piracy / strike). Without C, four of the Sentinel's nine
-  disruption types were unreachable
-- **Output**: Raw article records stored in `news_cache` with `processed=False`
+- **Credibility tiering** prioritises high-credibility global and industry sources.
+- **Deduplication** inserts only new URLs (`ON CONFLICT DO NOTHING`).
+- **Rate limiting:** GDELT throttles hard per IP. A 429 is *not* retried
+  in-cycle (that extends the block); the keyed providers in
+  `news_providers.py` cover the gap and the next run retries.
+- **Query rotation:** three queries alternate across runs — maritime
+  chokepoints, producer-nation supply events, and physical disruption (storm /
+  fire / piracy / strike). Without the third, four of the Sentinel's nine
+  disruption types were unreachable.
 
 ---
 
-#### `src/ingestion/ais_streamer.py` — AIS Vessel Telemetry Collector
+#### `src/ingestion/ais_streamer.py` — AIS Vessel Telemetry
 
-Connects to **AISStream.io WebSocket** and collects tanker positions in 6 strategic bounding boxes.
-
-**Bounding boxes monitored:**
+Collects tanker positions from **AISStream.io** in six strategic bounding boxes.
 
 | Region | Geographic Area |
 |---|---|
@@ -268,30 +260,20 @@ Connects to **AISStream.io WebSocket** and collects tanker positions in 6 strate
 | Turkish Straits | 40.5°–41.5°N, 28.5°–30°E |
 | Cape of Good Hope | 36°–32°S, 17°–21°E |
 
-- Collects for `AIS_SNAPSHOT_SECONDS` (default 600s) then disconnects cleanly.
-  Ship *type* arrives only in Type-5 (ShipStaticData) messages broadcast roughly
-  every 6 minutes, while positions arrive every few seconds — a window shorter
-  than that classifies only ~window/360 of vessels. Learned types are persisted
-  to `vessel_type_registry` so coverage compounds across cycles.
-- Filters garbage coordinates (0,0) and validates lat/lon bounds
-- Assigns a human-readable `region` label based on which bounding box the vessel is in
-- Output stored in `vessel_telemetry` table with MMSI, position, speed, heading
+- Collects for `AIS_SNAPSHOT_SECONDS` (600 s). Ship *type* arrives only in
+  Type-5 messages broadcast about every 6 minutes, so shorter windows classify
+  few vessels. Learned types persist in `vessel_type_registry`.
+- An HTTP 429 at the handshake is retried after 30 / 90 / 180 s instead of
+  losing the window.
+- Filters invalid coordinates and labels each vessel with its region.
 
 ---
 
-#### `src/ingestion/market_trawler.py` — Market Price Fetcher
+#### `src/ingestion/market_trawler.py` and `freight_trawler.py`
 
-Downloads OHLCV data for 4 energy tickers via `yfinance` (no API key required).
-
-| Ticker | Instrument |
-|---|---|
-| `BZ=F` | Brent Crude Futures (primary signal) |
-| `NG=F` | Henry Hub Natural Gas Futures |
-| `USO` | United States Oil Fund ETF |
-| `XLE` | Energy Select Sector SPDR Fund |
-
-- Fetches `MARKET_HISTORY_PERIOD` (60 days) of history on each cron cycle
-- `get_brent_rolling_stats()` returns current price, 30-day mean, and std deviation for SDI normalisation
+`yfinance` OHLCV for `BZ=F` (Brent, the primary signal), `NG=F`, `USO`, `XLE`,
+and `BOAT` (Breakwave dry-bulk shipping ETF), used as the freight-stress proxy. 60 days of history
+per run; `get_brent_rolling_stats()` gives the 30-day mean and σ for the SDI.
 
 ---
 
@@ -299,51 +281,39 @@ Downloads OHLCV data for 4 energy tickers via `yfinance` (no API key required).
 
 ---
 
-#### `src/database/postgres_db.py` — PostgreSQL Abstraction Layer
+#### `src/database/postgres_db.py` — PostgreSQL
 
-The local time-series cache. Uses **SQLAlchemy connection pooling** (pool_size=5, max_overflow=10).
+SQLAlchemy pool (`pool_size=5, max_overflow=10`). `init_schema()` is
+idempotent (`CREATE TABLE IF NOT EXISTS` plus `ADD COLUMN IF NOT EXISTS`
+migrations) and runs on every boot.
 
-**Tables:**
+| Table | Purpose |
+|---|---|
+| `news_cache` | Headlines; `processed` controls Sentinel batching |
+| `risk_events` | Scored incidents: type, severity, confidence, chokepoints (direct/indirect), producers, summary, `source_urls`, `sources_verified` |
+| `vessel_telemetry` / `vessel_type_registry` | AIS positions; learned ship types |
+| `market_prices` | OHLCV per ticker |
+| `sdi_snapshots` | Canonical SDI timeline written by the worker |
+| `backtest_jobs`, `risk_events_backtest` | Historical replay jobs and their events |
+| `provider_quota` | Daily usage of the keyed news providers |
 
-| Table | Schema | Purpose |
-|---|---|---|
-| `news_cache` | id, url, title, source, fetched_at, processed | Raw GDELT headlines; `processed` flag controls Sentinel batching |
-| `vessel_telemetry` | mmsi, vessel_name, lat, lon, speed, heading, region, recorded_at | AIS positions; latest position per MMSI retained |
-| `risk_events` | region, disruption_type, severity, affected_chokepoints (JSON), sdi_score, summary, scored_at | Gemini-scored geopolitical events |
-| `price_history` | ticker, trade_date, open, close, high, low, volume | OHLCV market data |
-
-**Key operations:**
-- `init_schema()` — idempotent `CREATE TABLE IF NOT EXISTS` (safe to call on every boot)
-- `upsert_news()` / `upsert_vessel()` / `upsert_price()` — conflict-tolerant bulk inserts
-- `fetch_risk_events()` — retrieves latest scored events ordered by `scored_at DESC`
-- `fetch_latest_prices()` — returns the most recent close price per ticker
+Read helpers raise `DatabaseUnavailable` on connection failure, which the API
+maps to 503, so an outage is never shown as "no data".
 
 ---
 
 #### `src/database/neo4j_graph.py` — Neo4j Knowledge Graph
 
-The spatial reasoning engine. Stores the supply chain topology as a property graph.
-
-**Graph Schema:**
-
 ```text
 (ExportPort) -[:SHIPS_THROUGH]-> (Chokepoint)
 (ExportPort) -[:EXPORTS]-------> (CrudeGrade)
-(Refinery)   -[:COMPATIBLE_WITH]-> (CrudeGrade)
-(Chokepoint) -[:CONNECTS_TO]---> (Chokepoint)
 ```
 
-**Seeded with:**
-- 8 major maritime chokepoints (with lat/lon, daily flow MB/day)
-- 12 crude export terminals (with transit dependencies)
-- 20 globally significant refineries (with capacity, lat/lon, API range)
-- 17 crude grades (API gravity, sulphur content)
-
-**Key Cypher queries:**
-- `find_export_ports_bypassing(chokepoint)` — finds ports whose `SHIPS_THROUGH` edges do NOT include the blocked chokepoint
-- `find_alternative_routes(chokepoint)` — returns full route-to-port mapping
-- `match_refineries_to_crude(grade)` — returns refineries compatible with a specific API gravity range
-- `get_refinery_coords(name)` — returns lat/lon for searoute distance calculation
+Seeded from code with `MERGE` (idempotent): 8 chokepoints, 12 export
+terminals, 20 refineries, 20 crude grades. An old-schema migration removes
+only this app's labels, never the whole database. With Neo4j unreachable, the
+same data is served from the seed lists after a 120 s cooldown, so the Reroute
+page keeps working.
 
 ---
 
@@ -351,251 +321,141 @@ The spatial reasoning engine. Stores the supply chain topology as a property gra
 
 ---
 
-#### `src/agents/sentinel_agent.py` — Geopolitical Risk Scoring Agent
+#### `src/agents/sentinel_agent.py` — Risk scoring
 
-Uses **Gemini 2.5 Flash** to score batches of news headlines for geopolitical risk.
-
-**Process:**
-1. Fetches up to 5 unprocessed headlines from `news_cache`
-2. Builds a structured JSON prompt requesting: `region`, `disruption_type`, `severity (0-1)`, a multi-factor `severity_breakdown`, `affected_chokepoints`, `confidence`, and a comprehensive 3-4 sentence `summary`.
-3. Validates the response — filters `affected_chokepoints` to only recognised names from `CHOKEPOINTS_SET`
-4. Enriches the event with a **Supply Disruption Index (SDI)** score using live Brent pricing
-5. Writes the scored event to `risk_events`
-6. Marks all processed headlines as `processed=True`
-
-**Rate limit guard:**
-- Tracks a rolling 60-second request deque (`_RPM_LIMIT = 15`)
-- Sleeps automatically when approaching the free-tier limit
-- tenacity retries on transient errors with exponential backoff
+Scores up to 10 headlines per run in one Gemini call and writes one event per
+incident. Headlines are sanitised and marked untrusted in the prompt; output
+fields are validated and clamped. On a 503 it retries once on
+`GEMINI_FALLBACK_MODEL`; on a 429 it rotates to the next key in
+`GEMINI_API_KEYS`. Events keep only the headlines the model cites; when it
+cites none, the batch is attached as context and `sources_verified` is false.
 
 ---
 
-#### `src/agents/modeler_agent.py` — Deterministic SDI Math Engine
-
-A zero-LLM computation layer. Reads from local Postgres/Neo4j and applies the **SDI formula**:
+#### `src/agents/modeler_agent.py` — SDI and risk matrices
 
 ```text
-SDI = w1·P_risk + w2·ΔD_vessel + w3·ΔP_price + w4·ΔP_freight
-
-Where:
-  P_risk     = Gemini Sentinel severity score (0–1)
-  ΔD_vessel  = tanker-share drop vs a self-calibrated baseline (0–1)
-  ΔP_price   = Brent price z-score vs 30-day mean (0–1)
-  ΔP_freight = BOAT ETF price z-score vs 30-day mean (0–1)
-  w1=0.50, w2=0.25, w3=0.10, w4=0.15  (overridable via SDI_W1/W2/W3/W4 env vars)
-
-Geopolitical risk carries half the index because it is the leading indicator.
-At w1=0.40 a severe chokepoint incident could not lift the headline out of the
-"moderate" band while markets stayed calm. The reallocation came from the two
-market terms rather than vessel density: price and freight are lagging/derived
-signals, whereas vessel movement is direct physical evidence.
-
-The composite is also banded (`SDI_BANDS` in constants.py) — LOW / MODERATE /
-ELEVATED / SEVERE / CRITICAL — and the dashboard colours the headline from the
-band rather than a local threshold.
+SDI = 100 × (0.50·P_risk + 0.25·ΔD_vessel + 0.10·ΔP_price + 0.15·ΔP_freight)
+bands: LOW <30 · MODERATE <50 · ELEVATED <65 · SEVERE <80 · CRITICAL
 ```
 
-- `compute_current_sdi()` — real-time global risk snapshot for the dashboard header
-- `compute_chokepoint_risk_matrix()` — per-chokepoint breakdown with vessel counts and price impact
-- `score_alternatives()` — resilience scoring for a set of rerouted alternatives
+Event risk decays toward a 0.05 baseline with a half-life set by disruption
+type, and aggregates by `max`, so one event explains each score. Vessel density
+is a self-calibrated tanker share. Details: [`docs/algorithms.md`](docs/algorithms.md) §1–3.
 
-**Vessel density is self-calibrating.** The baseline for a region is the median
-of *its own* recent readings, pulled from the same query as the live value, so
-partial AIS coverage biases both sides equally and cancels. It replaced a
-hand-maintained table of vessel counts that required ≥70% ship-type coverage to
-be trusted — a bar the collector could not clear, leaving 25% of the index
-permanently dead.
-
-The measured quantity is **tanker share** (`tankers / typed`), not a corrected
-count. A share is invariant to both AIS type coverage and the collector's
-snapshot window, whereas a raw count moves with either. On live data it was the
-more stable baseline in every region (e.g. Malacca CV 0.76 → 0.42).
-
-*Trade-off:* a uniform collapse of **all** traffic leaves the share unchanged.
-This detects the realistic case — tankers rerouting while other shipping
-continues — not a total port shutdown.
+**Important limitation:** the 0.70 producer-to-chokepoint transit discount is
+uniform across producer/chokepoint pairs; it does not yet model each producer's
+actual route concentration.
 
 ---
 
-**Important limitation:** The `0.70` producer-to-chokepoint transit-inference
-discount is applied uniformly across producer/chokepoint pairs. It does not
-yet model each producer's actual route concentration; that refinement awaits a
-reliable trade-flow data integration.
+#### `src/agents/fixer_agent.py` — Reroute
+
+1. Canonicalise the destination (`Rotterdam (Netherlands)` → `Rotterdam`);
+   unknown → 422.
+2. Find compatible terminals whose graph routes avoid the blockade
+   (substitutes within ±4 °API / ±1 % sulphur; two-grade blends).
+3. Compute the **restricted** sea route to the chosen refinery whenever the
+   route engine can block the passage — rows are labelled `verified`,
+   `unverified` (static detour) or `estimated` (no coordinates).
+4. Landed cost = Brent + freight premium over the whole voyage.
+5. Supplier risk = worst matching event, decayed like the SDI.
+6. Rank by `cost`, `speed` or `balanced`:
+   `0.35·cost + 0.25·time + 0.25·(1 − risk) + 0.15·(1 − congestion)`.
+7. Label sanctioned suppliers (not filtered).
 
 ---
 
-#### `src/agents/fixer_agent.py` — Adaptive Procurement Orchestrator
+#### `src/agents/spr_agent.py` — SPR burn-down
 
-The core rerouting engine. Executes a **5-step analysis** for every user query.
-
-**Step 1 — Chemical Constraint:**
-Queries Neo4j for refineries compatible with the selected crude grade (by API gravity range). If no match, the grade constraint is widened to include all grades.
-
-**Step 2 — Spatial Traversal:**
-Queries Neo4j for export ports whose shipping routes do **not** cross the blocked chokepoint. Uses Cypher path traversal on the `SHIPS_THROUGH` graph.
-
-**Step 3 — Financial Math (Freight Premium):**
-```text
-Freight Premium ($/bbl) = (VLCC Daily Charter × Conditional Detour Days) / VLCC Cargo Barrels
-
-Conditional Detour Days = 0 if the port's natural route avoids the blockade
-                        = N extra days if the port would normally transit the blockade
-Landed Cost ($/bbl) = Brent Spot + Freight Premium
-```
-
-**Step 4 — Lead Time (Marine Routing):**
-Uses the `searoute` library for real nautical distance calculation between the export port and the destination refinery. Converts km → NM → days at VLCC speed (13 knots = 312 NM/day).
-
-**Step 5 — Composite Scoring:**
-```text
-Composite Score = 0.40 × Cost Score + 0.30 × Time Score + 0.30 × Risk Score
-
-Time Score = 1 - min(lead_time / 45 days, 1)
-Cost Score = 1 - min(landed_cost / max_cost, 1)
-Risk Score = 1 - dynamic_route_risk (from risk_events DB)
-```
-Ports are ranked by composite score (or cost/speed only, user-selectable). The top-ranked port is flagged as the recommendation.
+Capacity is derived from the three ISPRL sites (39.1 MB). Shortfall = 5.4 mb/d ×
+the blocked chokepoint's explicit import share (unknown chokepoints rejected).
+Demand levers ramp in over 3 / 7 / 14 days; a pessimistic case runs them at
+50 %. The burn-down handles fractional arrival days and refills at a
+configurable share after arrival. The response includes an `assumptions` list
+the UI shows beside the result. Details: [`docs/algorithms.md`](docs/algorithms.md) §6.
 
 ---
 
-#### `src/agents/spr_agent.py` — SPR Burn-Down Modeller
+#### `src/agents/briefing_agent.py` — War Room brief
 
-Calculates India's **Strategic Petroleum Reserve depletion trajectory** during a supply disruption.
-
-**Inputs:**
-- `lead_time_days` — days until the rerouted shipment arrives (from Fixer Agent)
-- `blocked_chokepoint` — determines India's daily import shortfall (from `_CHOKEPOINT_IMPORT_SHARE` map)
-- `disrupted_volume_mbpd` — optional manual override
-
-**Process:**
-1. Computes daily shortfall: `India consumption × chokepoint import share`
-2. `SPR Survival Days = SPR Capacity (39 MB) / Daily Shortfall`
-3. `Supply Gap = max(0, Lead Time − SPR Survival Days)`
-4. Applies **Demand Management Levers** to narrow the gap:
-   - Refinery Run-Rate Cut (−15%)
-   - Industrial Priority Scheme (−8%)
-   - Transport Fuel Rationing (−10%)
-5. Builds a day-by-day burn-down DataFrame (baseline vs managed)
-6. Computes macro-economic impact: `GDP Hit = Gap Days × 0.035%/day` → USD equivalent at India GDP ≈ $3.7T
-
-**Output:** A complete dict including burn-down DataFrame, demand actions, GDP/inflation impact, and a colour-coded recommendation (green / orange / red).
-
----
-
-#### `src/agents/briefing_agent.py` — Executive Briefing Agent
-
-Uses **Gemini 2.5 Flash** to write a formal Emergency Action Plan from the deterministic agent outputs.
-
-**Prompt structure:**
-- Persona: Chief Intelligence Officer for India's Ministry of Petroleum & Natural Gas
-- Context: Crisis name, target refinery, SPR data (survival days, supply gap, macro impact), top reroute (port, grade, lead time, landed cost)
-- Output: 3 paragraphs — Situation Assessment → Procurement Directive → Macro-economic Mitigation
-
-Designed to be rendered directly in the War Room tab.
+Gemini writes a three-paragraph Emergency Action Plan (situation, procurement,
+macro mitigation) from the deterministic outputs. Scenario and refinery labels
+are sanitised and delimited as data. Cached 30 minutes per input set.
 
 ---
 
 ### Utilities
 
+- `src/utils/constants.py` — single source of truth: chokepoint registry and
+  aliases, SDI bands, half-lives, VLCC economics, sanctioned-source list.
+- `src/utils/metrics.py` — pure functions: SDI, normalisers, price impact,
+  resilience score. Weights via `SDI_W1`–`SDI_W4` (must sum to 1.0).
+- `src/utils/schemas.py` — bounded request models and the chokepoint validator.
+- `src/utils/rate_limit.py` — per-client + global sliding-window limits.
+
 ---
 
-#### `src/utils/constants.py` — Domain Constants Registry
-Single source of truth for all shared domain constants. **All modules import from here** — no magic literals scattered across files.
+## Dashboard Pages
 
-Covers: canonical chokepoint list, VLCC financial fallbacks, Gemini model name (env-overridable), SDI thresholds, and market data periods.
+Hash-routed (`#overview`, `#map`, …). Desktop shows a sidebar; phones show a
+five-tab bar (Overview · Map · Risk · Markets · Respond) with sub-switches.
 
----
-
-#### `src/utils/metrics.py` — Pure Math Functions
-Stateless, no-I/O functions for risk quantification.
-
-| Function | Purpose |
+| Page | What it shows |
 |---|---|
-| `supply_disruption_index()` | Weighted SDI formula → score in [0, 100] |
-| `normalise_price_delta()` | Z-score Brent price deviation to [0, 1] |
-| `normalise_vessel_density_delta()` | Vessel count vs baseline deviation to [0, 1] |
-| `estimate_price_impact()` | USD/bbl crude price impact from supply shock |
-| `compute_resilience_score()` | Resilience index for a set of rerouted alternatives |
-| `flow_weighted_risk()` | Flow-weighted aggregate risk across multiple chokepoints |
+| **Overview** | SDI gauge and band, the four components, what is driving the score, chokepoint dials, alerts, data health. Degrades to the remaining feeds if the SDI feed fails. |
+| **Threat Map** | Leaflet map of chokepoint risk and live vessel positions |
+| **Risk** | Event feed with filters, SDI timeline, chokepoint and producer matrices |
+| **Markets** | Brent vs its 30-day trend, other instruments, freight stress; missing prices read "Unavailable" |
+| **Reroute** | Ranked alternative supply with route basis, sanctioned labels and ranking mode |
+| **SPR** | Burn-down with levers, pessimistic case, assumptions, reserve sites, macro impact |
+| **War Room** | One-click scenario: deterministic brief first, Gemini narrative after; no SPR run when no route exists |
+| **History** | Backtests of past crises and lead-time validation |
 
-Weights (`w1`, `w2`, `w3`, `w4`) are overridable via `SDI_W1`–`SDI_W4` environment variables (must sum to 1.0).
-
----
-
-## Dashboard Tabs
-
-| # | Tab | Description |
-|---|---|---|
-| 1 | 🌍 **Threat Map** | Interactive Leaflet map displaying live vessel positions and a chokepoint risk heatmap |
-| 2 | 🔴 **Risk Intelligence** | Four equal panels: Sentinel event feed, SDI timeline, chokepoint risk matrix, producer risk matrix |
-| 3 | 📈 **Market Pulse** | Brent/NG/XLE charts + 60-day high/low and price-impact KPI cards |
-| 4 | 🔀 **Reroute Matrix** | Interactive 5-step procurement analysis — select a blocked chokepoint and destination refinery to get a ranked table of alternative crude sources |
-| 5 | 🛢️ **SPR Optimizer** | SPR burn-down simulator with Recharts graph, demand management playbook, and GDP/inflation impact |
-| 6 | ⚔️ **War Room** | One-click crisis scenario simulator — selects a scenario, runs the full pipeline, and generates an AI-written Executive Action Plan |
-| 7 | ⏮️ **Historical Validation** | Backtest job manager plus lead-time validation against past crises |
-
-### Score drill-downs
-
-Every row in the Sentinel feed, the chokepoint matrix and the producer matrix
-opens a detail modal explaining **why** that score was assigned. Because risk
-aggregates by `max` rather than by sum, exactly one event sets each score; the
-modal names that driver, lists the other contenders, and shows the arithmetic
-behind each contribution:
+Every score opens a drill-down drawer naming the event that set it and the
+arithmetic behind it:
 
 ```text
 0.588   severity 0.84  × 0.7 discount  · decayed over 26.2h
         "export routes cross Strait of Hormuz"
 ```
 
-Chokepoint and producer modals also locate the subject on a small map, with the
-halo scaled to its risk score.
+A data-health panel reports each feed (AIS, news, market, Gemini) as ok,
+partial, stale or down, and the shared data provider tracks failures per feed.
 
 ---
 
 ## Design System
 
-The UI runs on the MERIDIAN design tokens defined in `app/globals.css`, with a
-persisted light/dark toggle in the header.
+The MERIDIAN design comes from Claude Design canvases (copies in
+`docs/design/meridian-v1` and `-v2`).
 
-- **Tokens.** ~26 semantic tokens (`bg`, `panel`, `border`, `hair`, `fg`,
-  `muted`, `accent`, `crit`, `safe`, `warn`, `orange` …) declared under
-  `@theme inline`. The `inline` matters: with a plain `@theme`, Tailwind
-  resolves the indirection in `:root` scope and the `.dark` overrides never
-  take effect.
-- **Soft fills are pre-mixed.** Use `bg-crit-soft`, never `bg-crit/15` — the
-  alpha differs per theme and an opacity modifier washes out in light mode.
-- **Theme switching** is a class on `<html>`, applied by an inline script in
-  `<head>` before first paint so there is no flash. System preference is
-  resolved into a real class rather than a `prefers-color-scheme` block, which
-  keeps the CSS variables and the `dark:` variant from ever disagreeing.
-- **Charts and Leaflet** take colours as props, not classes, so they read from
-  `useChartTheme()` (`components/energy/chart-theme.ts`), which mirrors the CSS
-  tokens as resolved hex. Keep the two in sync.
+- **Colour tokens** are CSS variables named after their dark-theme hex
+  (`--x-0b0f14`, …) in `app/globals.css`; `html.light` swaps their values.
+  Utility classes (`bg-panel`, `text-head`, `bg-crit-soft`, …) map onto them.
+- **Theme** is applied by a tiny pre-paint script (`components/m/theme-script.ts`,
+  storage key `meridian-v2-theme`) so there is no flash, and toggled from the header.
+- **Charts and Leaflet** need concrete colours in SVG attributes, so they resolve
+  the CSS variables at runtime with `cssColor()`.
+- **Basemap:** CARTO when `NEXT_PUBLIC_CARTO_KEY` is set, otherwise Esri tiles.
 
 ---
 
 ## The Shadow Cache Architecture
 
-The fundamental design decision: **no external API call is ever made in the request path**.
+**No external data API is called in the request path.**
 
 ```text
-Traditional architecture:       Shadow Cache architecture:
-User clicks button              User clicks button
-    │                               │
-    ▼                               ▼
-Call GDELT API (2–10s)       Read from local Postgres (<5ms)
-    │                               │
-    ▼                               ▼
-Call Gemini API (1–3s)       Read from local Neo4j (<10ms)
-    │                               │
-    ▼                               ▼
-Call yfinance (1–3s)         Render result instantly
-    │
-    ▼
-Render result (~15s total)
+Traditional:                     Shadow Cache:
+User clicks                      User clicks
+  → GDELT (2–10 s)                 → Postgres (<5 ms)
+  → Gemini (1–3 s)                 → Neo4j (<10 ms)
+  → yfinance (1–3 s)               → render
+  → render (~15 s)
 ```
 
-External APIs are queried **only in the cron_worker.py background process**, which writes results to the local databases. The dashboard reads exclusively from these local databases.
+The ingestion job writes the caches; the API only reads them. The War Room
+brief is the deliberate exception, and it is cached and rate-limited.
 
 ---
 
@@ -734,7 +594,9 @@ Follow Steps 1, 3, and 4 from Option A above (skip Step 2).
 
 ## Environment Variables
 
-All configuration lives in `backend/.env`. Copy `backend/.env.example` to `backend/.env` and fill in your values.
+Backend configuration lives in `backend/.env` (copy `backend/.env.example`,
+which documents every variable). `load_dotenv()` never overrides variables
+already set by the host, so platform settings always win over a stray `.env`.
 
 ```bash
 # ── PostgreSQL ────────────────────────────────────────────────────────────
@@ -742,53 +604,74 @@ DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=energy_resilience
 DB_USER=postgres
-DB_PASSWORD=your_password        # Required — dashboard won't start without this
+DB_PASSWORD=your_password
+DB_SSLMODE=                  # "require" for Neon
 
 # ── Neo4j ─────────────────────────────────────────────────────────────────
 NEO4J_URI=neo4j://localhost:7687
 NEO4J_USER=neo4j
-NEO4J_PASSWORD=your_password     # Required — Reroute Matrix won't work without this
+NEO4J_PASSWORD=your_password
 
-# ── Gemini AI ──────────────────────────────────────────────────────────────
-# Get free key instantly: https://aistudio.google.com/app/apikey (no credit card)
-# Without this: Sentinel Agent disabled, War Room briefings show placeholder.
-#               All historical data, charts, and deterministic models still work.
+# ── Gemini ────────────────────────────────────────────────────────────────
+# Free key: https://aistudio.google.com/app/apikey
+# Without it: Sentinel is off and the War Room brief shows a placeholder;
+# historical data and every deterministic model still work.
 GEMINI_API_KEY=your_gemini_api_key
-
-# Optional pool of extra keys (comma-separated). The free tier caps requests
-# per key, so a 429/RESOURCE_EXHAUSTED rotates to the next key immediately
-# rather than stalling scoring until the quota window resets.
-GEMINI_API_KEYS=
-
-# Note: gemini-2.5-flash returns 404 for API accounts created after Google
-# restricted it, so a mixed-age key pool must standardise on an alias every
-# key can call. One model across all keys also keeps severity calibrated.
+GEMINI_API_KEYS=             # optional comma-separated pool; a 429 rotates keys
 GEMINI_MODEL=gemini-flash-latest
+GEMINI_FALLBACK_MODEL=gemini-flash-lite-latest   # tried once on 503
 
-# ── News fallback providers (used when GDELT is rate-limited) ──────────────
-# Tried freshest-first; daily usage is tracked in the provider_quota table so
-# budgets survive a worker restart.
+# ── News fallback providers (used when GDELT rate-limits) ─────────────────
 NEWSDATA_API_KEY=            # 200 req/day, real-time
 GNEWS_API_KEY=               # 100 req/day, ~12h delay
 NEWSAPI_API_KEY=             # 100 req/day, ~24h delay, non-commercial only
-GDELT_TIMESPAN=12h           # Lookback per GDELT call
+GDELT_TIMESPAN=12h
 
 # ── AISStream.io ───────────────────────────────────────────────────────────
-# Get free key instantly: https://aisstream.io
-# Without this: Threat Map shows last-known vessel positions from seed data.
-AISSTREAM_API_KEY=your_aisstream_key
+AISSTREAM_API_KEY=your_aisstream_key   # free at https://aisstream.io
 
-# ── SDI Formula Weights (must sum exactly to 1.0) ─────────────────────────
-SDI_W1=0.50    # Gemini geopolitical risk score
-SDI_W2=0.25    # Vessel density anomaly (AIS)
-SDI_W3=0.10    # Brent crude price deviation
-SDI_W4=0.15    # Freight cost deviation (BOAT ETF)
+# ── API server ─────────────────────────────────────────────────────────────
+CORS_ORIGINS=http://localhost:3000     # comma-separated exact origins
+CORS_ORIGIN_REGEX=                     # e.g. Cloudflare preview URLs
+RUN_WORKER=0                           # 1 = run the ingestion scheduler in the API process
 
-# ── Cron Worker ────────────────────────────────────────────────────────────
-CRON_INTERVAL_MINUTES=60     # Background refresh interval
-AIS_SNAPSHOT_SECONDS=600     # How long to collect AIS data per cron cycle.
-                             # Must exceed the ~360s AIS Type-5 broadcast
-                             # period or most vessels are never type-classified.
+# ── SDI weights (must sum to 1.0) ─────────────────────────────────────────
+SDI_W1=0.50    # geopolitical risk
+SDI_W2=0.25    # vessel density
+SDI_W3=0.10    # Brent deviation
+SDI_W4=0.15    # freight stress
+
+# ── Worker ─────────────────────────────────────────────────────────────────
+CRON_INTERVAL_MINUTES=60
+AIS_INTERVAL_MINUTES=60
+AIS_SNAPSHOT_SECONDS=600     # must exceed the ~360 s AIS Type-5 period
+BACKTEST_MAX_CONCURRENT=1
+```
+
+Frontend (`frontend/.env.local`, or build variables on Cloudflare Pages —
+they are baked into the static bundle at build time):
+
+```bash
+NEXT_PUBLIC_API_URL=http://localhost:8000   # production builds fail if this is missing or localhost
+NEXT_PUBLIC_CARTO_KEY=                      # optional; Esri tiles are used without it
+```
+
+---
+
+## Deployment, CI and Further Docs
+
+| Document | Covers |
+|---|---|
+| [`DEPLOYMENT.md`](DEPLOYMENT.md) | Production runbook: Cloudflare Pages, Render, Neon, AuraDB, hourly ingestion, free-tier budgets |
+| [`docs/github-workflow.md`](docs/github-workflow.md) | PRs, required checks, CI workflows, Neon branch per PR, Dependabot, CodeQL |
+| [`docs/algorithms.md`](docs/algorithms.md) | Every formula and constant behind the numbers on screen |
+| [`TECHNICAL_DEBT.md`](TECHNICAL_DEBT.md) | Known gaps and their status |
+
+Checks to run before opening a PR (CI runs the same):
+
+```bash
+cd backend && python -m pytest -q
+cd frontend && npm run typecheck && NEXT_PUBLIC_API_URL=http://127.0.0.1:9 npm run build && npm run test:e2e
 ```
 
 ---
