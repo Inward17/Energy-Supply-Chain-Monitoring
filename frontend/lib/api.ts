@@ -69,6 +69,8 @@ export interface LiveMetrics {
   market_source_date?: string | null
   computed_at?: string
   updated_at?: string
+  /** "seed" when Neo4j is unreachable and graph views use built-in seed data. */
+  graph_status?: "live" | "seed"
   status?: string
   error?: string
 }
@@ -181,7 +183,7 @@ export interface ProcurementRow {
 }
 
 export interface Diagnostic {
-  reason: "no_data_for_grade" | "chokepoint_bypass_eliminates_all_grade_sources" | "grade_only_available_from_excluded_countries"
+  reason: "no_data_for_grade" | "chokepoint_bypass_eliminates_all_grade_sources" | "grade_only_available_from_excluded_countries" | "no_verified_route"
   requested_grade: string
   excluding: string[]
   grade_suppliers: string[]
@@ -237,6 +239,7 @@ export interface WarRoomRoute {
   lead: string
   match_type: "exact" | "substitute"
   match_reason: string
+  route_basis?: "verified" | "unverified" | "estimated"
 }
 
 export interface WarRoomSpr {

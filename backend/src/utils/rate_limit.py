@@ -19,6 +19,7 @@ if the API is ever scaled horizontally.
 
 from __future__ import annotations
 
+import os
 import threading
 import time
 from collections import defaultdict, deque
@@ -27,20 +28,22 @@ from fastapi import HTTPException, Request
 
 
 def client_ip(request: Request) -> str:
-    """Best-effort caller identity.
+    """Caller identity for per-client limits.
 
-    Production sits behind Cloudflare (in front of Render), which overwrites
-    CF-Connecting-IP with the real client address, so it cannot be forged by
-    the caller: Cloudflare answers 403 to requests that set it themselves
-    (verified against production). X-Forwarded-For's first hop can be forged,
-    which is why the global window exists as a backstop.
+    Proxy headers are trusted only when TRUSTED_PROXY says what sits in front:
+
+    * ``cloudflare`` (default, the production setup): CF-Connecting-IP. Render
+      is fronted by Cloudflare, which sets this header itself and answers 403
+      to any request that tries to supply it (verified against production).
+    * ``none``: the TCP peer address only, for deployments reached directly.
+
+    X-Forwarded-For is never trusted: its first hop is whatever the client
+    sent. The global window remains the backstop either way.
     """
-    cf = request.headers.get("cf-connecting-ip")
-    if cf:
-        return cf.strip()
-    xff = request.headers.get("x-forwarded-for")
-    if xff:
-        return xff.split(",")[0].strip()
+    if os.getenv("TRUSTED_PROXY", "cloudflare").strip().lower() == "cloudflare":
+        cf = request.headers.get("cf-connecting-ip")
+        if cf:
+            return cf.strip()
     return request.client.host if request.client else "unknown"
 
 

@@ -17,6 +17,7 @@ Zero external API calls are made at query time.
 from __future__ import annotations
 
 import logging
+import math
 from datetime import datetime, timezone
 from typing import Any
 
@@ -168,11 +169,31 @@ def get_conditional_detour(blocked_chokepoint: str, port_transit_chokepoints: li
 # Step 4 Helper: Lead Time via Marine Routing — Bug Fix #1
 # ---------------------------------------------------------------------------
 
+class _NoSeaRoute(ValueError):
+    """searoute found no path (it reports length inf/0 instead of raising)."""
+
+
+def _sea_route(
+    port_lon: float, port_lat: float, dest_lon: float, dest_lat: float, restriction: str | None = None
+) -> tuple[float, list[list[float]]]:
+    """searoute distance in km and the route's [lon, lat] coordinates.
+
+    When restrictions leave no path, searoute only *warns* and returns an empty
+    route of length inf or 0. Treat that as "no route": silently it became a
+    0-day "verified" voyage.
+    """
+    restrictions = ["northwest", restriction] if restriction else ["northwest"]
+    route = sr.searoute([port_lon, port_lat], [dest_lon, dest_lat], units="km", restrictions=restrictions)
+    km = float(route["properties"]["length"])
+    coords = route["geometry"]["coordinates"]
+    if not math.isfinite(km) or km <= 0 or not coords:
+        raise _NoSeaRoute(f"no sea route (restriction={restriction!r})")
+    return km, coords
+
+
 def _sea_km(port_lon: float, port_lat: float, dest_lon: float, dest_lat: float, restriction: str | None = None) -> float:
     """searoute distance in km ([lon, lat] order). Raises if no route exists."""
-    kwargs = {"restrictions": ["northwest", restriction]} if restriction else {}
-    route = sr.searoute([port_lon, port_lat], [dest_lon, dest_lat], units="km", **kwargs)
-    return float(route["properties"]["length"])
+    return _sea_route(port_lon, port_lat, dest_lon, dest_lat, restriction)[0]
 
 
 def _haversine_km(port_lon: float, port_lat: float, dest_lon: float, dest_lat: float) -> float:
@@ -180,6 +201,21 @@ def _haversine_km(port_lon: float, port_lat: float, dest_lon: float, dest_lat: f
     lat1, lat2 = radians(port_lat), radians(dest_lat)
     a = sin(radians(dest_lat - port_lat) / 2) ** 2 + cos(lat1) * cos(lat2) * sin(radians(dest_lon - port_lon) / 2) ** 2
     return 2 * 6371 * asin(sqrt(a))
+
+
+# Passages searoute cannot restrict. A route is checked against a box around
+# the passage instead: if it stays out of the box it provably avoids it.
+# (min_lat, max_lat, min_lon, max_lon). Malacca's box stops short of the Sunda
+# and Lombok alternatives; the Cape's covers the rounding south of Africa.
+_PASSAGE_BOXES: dict[str, tuple[float, float, float, float]] = {
+    "Strait of Malacca": (-1.5, 7.0, 97.0, 104.5),
+    "Cape of Good Hope": (-45.0, -30.0, 12.0, 30.0),
+}
+
+
+def _crosses_box(coords: list[list[float]], box: tuple[float, float, float, float]) -> bool:
+    min_lat, max_lat, min_lon, max_lon = box
+    return any(min_lat <= lat <= max_lat and min_lon <= lon <= max_lon for lon, lat in coords)
 
 
 # Route basis, best to worst. A blend takes its worst leg.
@@ -198,28 +234,38 @@ def _route_lead_time(
 
     The graph only says whether a terminal's *India* route crosses the
     blockade; the route to another destination can differ (Ras Tanura ->
-    Rotterdam goes through Suez). So whenever the route engine can restrict
-    the blocked passage, the restricted route IS the route -- regardless of
-    the static detour table (Hormuz's is 0) -- and the result is "verified".
-    Otherwise the unrestricted route plus the static detour is "unverified".
+    Rotterdam goes through Suez). "verified" means the route engine proved the
+    voyage avoids the passage:
+      * restrictable passages (Suez, Hormuz, ...): the restricted route is used;
+      * Malacca / Cape: the route's geometry stays out of the passage box.
+    Anything else (no path around the blockade, a route that crosses an
+    unrestrictable passage, engine failure) is "unverified": the unrestricted
+    route plus the static detour, never eligible as the recommendation.
     """
+    days_for = lambda km, extra=0.0: round(km / _KM_PER_NM / NAUTICAL_MILES_PER_DAY + extra, 1)  # noqa: E731
     restriction = _SEAROUTE_RESTRICTIONS.get(blocked_chokepoint or "")
+    box = _PASSAGE_BOXES.get(blocked_chokepoint or "")
+
     if restriction:
         try:
-            km = _sea_km(port_lon, port_lat, dest_lon, dest_lat, restriction)
-            return round(km / _KM_PER_NM / NAUTICAL_MILES_PER_DAY, 1), "verified"
+            return days_for(_sea_km(port_lon, port_lat, dest_lon, dest_lat, restriction)), "verified"
         except Exception as exc:  # no path around the blockade, or engine error
             logger.debug("searoute restriction '%s' failed (%s)", restriction, exc)
 
     try:
-        km = _sea_km(port_lon, port_lat, dest_lon, dest_lat)
+        km, coords = _sea_route(port_lon, port_lat, dest_lon, dest_lat)
     except Exception as exc:
         # Straight-line fallback if searoute fails (e.g. same port as dest)
         logger.debug("searoute failed (%s) - using haversine fallback", exc)
-        km = _haversine_km(port_lon, port_lat, dest_lon, dest_lat)
-    days = km / _KM_PER_NM / NAUTICAL_MILES_PER_DAY + extra_detour_days
-    # With no blockade there is nothing to verify.
-    return round(days, 1), ("verified" if not blocked_chokepoint else "unverified")
+        return days_for(_haversine_km(port_lon, port_lat, dest_lon, dest_lat), extra_detour_days), (
+            "verified" if not blocked_chokepoint else "unverified"
+        )
+
+    if not blocked_chokepoint:
+        return days_for(km), "verified"  # nothing to avoid
+    if box and not restriction and not _crosses_box(coords, box):
+        return days_for(km), "verified"
+    return days_for(km, extra_detour_days), "unverified"
 
 
 def _compute_lead_time(*args: Any, **kwargs: Any) -> float:
@@ -286,9 +332,18 @@ def canonical_refinery(name: str) -> str:
     return name.strip()
 
 
+def supplier_countries(country: str) -> set[str]:
+    """Countries behind a supplier row, normalised. A blend row reads
+    "Iran + Iraq", so exclusion and sanctions checks must split it."""
+    return {part.strip().casefold() for part in (country or "").split("+") if part.strip()}
+
+
+_SANCTIONED_NORMALISED = {c.casefold() for c in SANCTIONED_SOURCE_COUNTRIES}
+
+
 def _is_sanctioned(country: str) -> bool:
     """True if the country (or any leg of a blend "A + B") is on the list."""
-    return any(part.strip() in SANCTIONED_SOURCE_COUNTRIES for part in country.split("+"))
+    return bool(supplier_countries(country) & _SANCTIONED_NORMALISED)
 
 
 def _country_risk(country: str, events: list[dict[str, Any]], now: datetime) -> float:
@@ -625,14 +680,16 @@ def find_alternatives(
         procurement_matrix.sort(key=lambda x: x["landed_cost_usd"])
 
     # ─── Step 5: Country filter (optional) ─────────────────────────────────
-    stage_b_countries = list({r.get("country", "") for r in procurement_matrix if r.get("country")})
+    stage_b_countries = sorted(set().union(*(supplier_countries(r.get("country", "")) for r in procurement_matrix)))
 
     if excluded_countries:
-        banned = {c.lower() for c in excluded_countries}
+        # A blend is excluded if ANY leg comes from an excluded country:
+        # "Iran + Iraq" must not survive excluding Iran.
+        banned = {c.strip().casefold() for c in excluded_countries}
         before = len(procurement_matrix)
         procurement_matrix = [
             r for r in procurement_matrix
-            if r.get("country", "").lower() not in banned
+            if not (supplier_countries(r.get("country", "")) & banned)
         ]
         removed = before - len(procurement_matrix)
         if removed:
@@ -662,7 +719,7 @@ def find_alternatives(
                 "message": f"All export sources for {crude_grade or 'your request'} route through {blocked_chokepoint}, which is currently blocked. No bypass route exists for this specific grade."
             }
         else:
-            conflicts = [c for c in (excluded_countries or []) if c.lower() in {bc.lower() for bc in stage_b_countries}]
+            conflicts = [c for c in (excluded_countries or []) if c.strip().casefold() in stage_b_countries]
             diagnostic = {
                 "reason": "grade_only_available_from_excluded_countries",
                 "requested_grade": crude_grade or "Any",
@@ -671,9 +728,25 @@ def find_alternatives(
                 "message": f"{crude_grade or 'Your requested grade'} is supplied almost exclusively by {', '.join(conflicts) if conflicts else 'your excluded countries'}, which is in your excluded countries list. No alternative source exists under these constraints."
             }
 
-    # Mark the top recommendation
-    if procurement_matrix:
+    # Verified routes rank first (stable sort keeps the chosen mode's order
+    # within each tier). Only a verified route can be the recommendation: an
+    # unverified lead time must never drive the arrival date used by SPR.
+    procurement_matrix.sort(key=lambda r: ROUTE_BASIS_RANK.get(r.get("route_basis", "estimated"), 2))
+    verified_count = sum(1 for r in procurement_matrix if r.get("route_basis") == "verified")
+    if procurement_matrix and verified_count:
         procurement_matrix[0]["recommended"] = True
+    elif procurement_matrix and diagnostic is None:
+        diagnostic = {
+            "reason": "no_verified_route",
+            "requested_grade": crude_grade or "Any",
+            "excluding": excluded_countries or [],
+            "grade_suppliers": [],
+            "message": (
+                f"No option could be verified to avoid {blocked_chokepoint} on its way to "
+                f"{dest_name}. The {len(procurement_matrix)} option(s) listed use estimated "
+                "routes and are not recommended."
+            ),
+        }
 
     # Resilience score via modeler (still used for the sidebar gauge)
     legacy_routes = find_alternative_routes(blocked_chokepoint)

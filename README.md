@@ -624,6 +624,7 @@ AISSTREAM_API_KEY=your_aisstream_key   # free at https://aisstream.io
 CORS_ORIGINS=http://localhost:3000     # comma-separated exact origins
 CORS_ORIGIN_REGEX=                     # e.g. Cloudflare preview URLs
 RUN_WORKER=0                           # 1 = run the ingestion scheduler in the API process
+TRUSTED_PROXY=cloudflare               # client-IP header for rate limits; "none" = TCP peer only
 
 # ── SDI weights (must sum to 1.0) ─────────────────────────────────────────
 SDI_W1=0.50    # geopolitical risk
@@ -657,7 +658,9 @@ NEXT_PUBLIC_CARTO_KEY=                      # optional; Esri tiles are used with
 | [`docs/algorithms.md`](docs/algorithms.md) | Every formula and constant behind the numbers on screen |
 | [`TECHNICAL_DEBT.md`](TECHNICAL_DEBT.md) | Known gaps and their status |
 
-Checks to run before opening a PR (CI runs the same):
+Checks to run before opening a PR (CI runs the same). Tests refuse a remote
+`DB_HOST` unless `TEST_DB_ALLOW_REMOTE=1`, and never use the configured Neo4j
+(set `TEST_NEO4J_URI` for a dedicated test graph):
 
 ```bash
 cd backend && python -m pytest -q

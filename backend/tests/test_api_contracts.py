@@ -37,3 +37,15 @@ def test_instrument_without_observations_is_unavailable_not_zero():
     for inst in r.json()["instruments"]:
         assert inst["available"] is False
         assert inst["price"] is None
+
+
+def test_live_metrics_reports_graph_status():
+    from collections import defaultdict
+    sdi = defaultdict(float, {"sdi_score": 10.0})
+    with (
+        patch.object(api, "compute_current_sdi", return_value=sdi),
+        patch.object(api, "get_driver", return_value=None),
+    ):
+        r = client.get("/api/metrics/live")
+    assert r.status_code == 200
+    assert r.json()["graph_status"] == "seed"

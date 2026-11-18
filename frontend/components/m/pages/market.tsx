@@ -17,7 +17,7 @@ const RANGE = { "2W": 10, "1M": 21, "2M": 9999 } as const
 type Range = keyof typeof RANGE
 
 export function MarketPage() {
-  const { market, live, feedFailed, refresh } = useData()
+  const { market, live, feedFailed, feedOkAt, refresh } = useData()
   const [range, setRange] = useState<Range>("2M")
   if (!market) {
     return feedFailed.market
@@ -25,6 +25,13 @@ export function MarketPage() {
       : <Loading label="Loading market data…" />
   }
 
+  // A failed refresh keeps the last good snapshot; say so instead of passing it off as current.
+  const stale = feedFailed.market
+    ? <ErrorNote
+        message={`Showing the last market data loaded at ${feedOkAt.market ? new Date(feedOkAt.market).toUTCString().slice(5, 22) + " UTC" : "an earlier refresh"} (closes as of ${live?.market_source_date ?? "unknown"}). The latest refresh failed.`}
+        onRetry={() => void refresh()}
+      />
+    : null
   const brent = market.instruments.find((i) => i.ticker === "BZ=F")
   const others = market.instruments.filter((i) => i.ticker !== "BZ=F")
   const slice = <T,>(xs: T[]) => xs.slice(-RANGE[range])
@@ -37,6 +44,7 @@ export function MarketPage() {
 
   return (
     <div className="flex flex-col gap-4 lg:gap-5">
+      {stale}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <span className="font-mono text-[11px] text-dim">
           {brentSeries.length} sessions · {shortDate(brentSeries[0]?.d)} – {shortDate(brentSeries[brentSeries.length - 1]?.d)}

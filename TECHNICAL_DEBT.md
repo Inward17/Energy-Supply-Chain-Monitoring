@@ -49,8 +49,10 @@ grows.
   value forward.
 - SPR assumes a 100 % full reserve (stated in the UI); chokepoint import shares
   are static 2024 values, and Gibraltar's (0.08) is an estimate.
-- Reroute routes through Malacca and the Cape cannot be restricted by the
-  route engine, so those rows are labelled `unverified`.
+- Malacca and the Cape cannot be restricted by the route engine; routes are
+  verified by geometry (staying out of a box around the passage). A route that
+  must cross one is `unverified`, ranked below verified ones and never
+  recommended; its static detour (Malacca 4 d, Cape none) is a rough estimate.
 - Supplier risk matches countries by text, not entity resolution.
 - The sanctioned-source list is a country list, not sanctions screening.
 

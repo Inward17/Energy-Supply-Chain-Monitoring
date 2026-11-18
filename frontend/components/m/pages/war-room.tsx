@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { fetchReroute, fetchSpr, fetchWarRoom, type ProcurementRow, type RerouteResult, type SprResult, type WarRoomResult } from "@/lib/api"
 import { useData } from "../data"
 import { ErrorNote, Eyebrow, Panel, Segmented, fmt } from "../ui"
@@ -30,9 +30,15 @@ export function WarRoomPage() {
   const [err, setErr] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const sc = SCENARIOS.find((s) => s.id === sid)!
+  // Each run gets an id; any response from an older run is dropped, including
+  // the AI brief, which can arrive after the user has started a new scenario.
+  const runId = useRef(0)
 
   const simulate = async () => {
+    const id = ++runId.current
+    const current = () => id === runId.current
     setBusy(true)
+    setAiState("idle")
     setErr(null)
     setFacts(null)
     setAi(null)
@@ -40,24 +46,27 @@ export function WarRoomPage() {
     // Deterministic facts first: the brief renders without waiting on Gemini.
     try {
       const reroute = await fetchReroute({ blocked_chokepoint: sc.chokepoint, ...common })
-      const top = reroute.procurement_matrix[0]
+      if (!current()) return
+      // Only a verified route gives a real arrival date (the backend marks it
+      // `recommended`). Without one, don't simulate the reserve at all.
+      const top = reroute.procurement_matrix.find((r) => r.recommended)
       if (!top) {
-        // No replacement supply: the arrival date is unknown, so don't
-        // simulate the reserve against an invented 30-day lead time.
         setFacts({ reroute, spr: null })
         setBusy(false)
         return
       }
       const spr = await fetchSpr({
         blocked_chokepoint: sc.chokepoint,
-        lead_time_days: Math.max(1, Math.round(top.lead_time_days)),
+        lead_time_days: top.lead_time_days, // fractional days are modelled; don't round
         disrupted_volume_mbpd: sc.volume,
         run_rate_cut_pct: levers.run,
         industrial_cut_pct: levers.ind,
         transport_cut_pct: levers.trans,
       })
+      if (!current()) return
       setFacts({ reroute, spr, top })
     } catch {
+      if (!current()) return
       setErr("The models did not respond. Check that the backend is running.")
       setBusy(false)
       return
@@ -73,8 +82,8 @@ export function WarRoomPage() {
       industrial_cut_pct: levers.ind,
       transport_cut_pct: levers.trans,
     })
-      .then((r) => { setAi(r); setAiState("done") })
-      .catch(() => setAiState("failed"))
+      .then((r) => { if (current()) { setAi(r); setAiState("done") } })
+      .catch(() => { if (current()) setAiState("failed") })
   }
 
   const copy = async () => {

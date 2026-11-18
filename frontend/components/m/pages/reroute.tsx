@@ -97,7 +97,7 @@ export function ReroutePage() {
   }
 
   const rows = (res?.procurement_matrix ?? []).filter((r) => r.lead_time_days <= maxLead)
-  const best = rows[0]
+  const best = rows.find((r) => r.recommended)
   const uniform = rows.length > 2 && rows.every((r) => r.landed_cost_usd === rows[0].landed_cost_usd && r.lead_time_days === rows[0].lead_time_days)
 
   return (
@@ -186,7 +186,11 @@ export function ReroutePage() {
                 </div>
               </div>
             ) : (
-              <Panel className="flex-[2_1_420px] p-5 text-sm text-dim">No routes within {maxLead} days — raise the max lead time.</Panel>
+              <Panel className="flex-[2_1_420px] p-5 text-sm text-dim">
+                {rows.length
+                  ? `No recommendation: none of the ${rows.length} options below could be verified to avoid ${blocked.replace("Strait of ", "")}, so their lead times are estimates.`
+                  : `No routes within ${maxLead} days — raise the max lead time.`}
+              </Panel>
             )}
             <Panel className="flex min-w-0 flex-[1_1_260px] flex-col gap-3 p-5 lg:p-[22px]">
               <Eyebrow>Supply resilience</Eyebrow>

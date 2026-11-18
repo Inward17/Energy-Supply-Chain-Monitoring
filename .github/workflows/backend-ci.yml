@@ -125,6 +125,8 @@ jobs:
               echo "DB_USER=${{ vars.NEON_ROLE || 'neondb_owner' }}"
               echo "DB_PASSWORD=${{ steps.neon.outputs.password }}"
               echo "DB_SSLMODE=require"
+              # conftest refuses remote databases unless told this one is disposable.
+              echo "TEST_DB_ALLOW_REMOTE=1"
             } >> "$GITHUB_ENV"
             echo "Database: Neon branch \`ci/pr-${{ github.event.number }}\` (${{ steps.neon.outputs.created == 'true' && 'created' || 'reused' }})" >> "$GITHUB_STEP_SUMMARY"
           else

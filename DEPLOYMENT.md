@@ -143,6 +143,11 @@ GEMINI_FALLBACK_MODEL=gemini-flash-lite-latest
 
 BACKTEST_MAX_CONCURRENT=1
 LOG_TO_FILE=0
+
+# Which proxy header identifies the client for rate limits. "cloudflare"
+# (default) trusts CF-Connecting-IP, which Cloudflare sets and refuses from
+# clients; "none" uses the TCP peer. X-Forwarded-For is never trusted.
+TRUSTED_PROXY=cloudflare
 ```
 
 **One instance, one uvicorn worker.** Rate limits and the War Room cache are
