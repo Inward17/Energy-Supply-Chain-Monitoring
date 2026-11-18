@@ -1,67 +1,80 @@
 # Technical Debt Register
 
-This register tracks known production and demo risks that are intentionally
-outside the scope of the news-balancing change.
+Known gaps, why they exist, and what "done" looks like. Resolved items stay
+listed briefly so the history is visible.
 
-## P0: Remove external API calls from HTTP request paths
+## Open
 
-Status: partially remediated on 2026-07-14.
+### P1: War Room brief calls Gemini in the request path
 
-The documented Shadow Cache guarantee is currently violated by these paths:
+`POST /api/orchestrator/war-room` still calls Gemini synchronously, the one
+exception to the Shadow Cache rule.
 
-- POST /api/orchestrator/war-room synchronously calls Gemini through
-  generate_emergency_brief().
+Mitigated (Nov 2026): briefs are cached 30 min per input set; the endpoint is
+rate-limited (5/client, 30 global per hour); a 503 retries once on
+`GEMINI_FALLBACK_MODEL`; the UI renders the deterministic brief first and the
+narrative after, so a slow or failed call never blocks the page.
 
-The dashboard GET paths were remediated: Brent and BOAT rolling statistics now
-read only from the local market_prices cache, and canonical SDI snapshots are
-computed by the background worker and persisted for the timeline.
+Done when: briefs are generated in the background and the endpoint never waits
+on the provider.
 
-Risk: network latency, rate limits, or provider outages can delay or fail a
-dashboard request during a live demonstration.
+### P1: Neo4j AuraDB instance lost
 
-Target remediation:
+Production logs show the Aura host no longer resolves (the free instance was
+paused and deleted). The API falls back to seed data, so Reroute still works,
+but graph updates (PortWatch congestion) have nowhere to go.
 
-1. Generate War Room briefs asynchronously and cache them by scenario inputs,
-   or return deterministic local guidance while a brief is pending.
-2. Preserve last-known-good brief values and explicit degradation metadata.
+Done when: a new instance is created, `NEO4J_*` is updated in Render and the
+GitHub secrets, and the hourly ingestion job keeps it active.
 
-Acceptance criteria: with outbound network access disabled, all dashboard GET
-endpoints and War Room simulation return within the local response-time budget
-without exposing provider errors.
+### P2: Neon branch per PR returns HTTP 412
 
-## P1: Restore strict TypeScript health
+Backend CI's "create Neon branch" step fails with 412; CI falls back to a
+throwaway Postgres container, so tests still run, but not against
+production-like data. `continue-on-error` hides it; check the job summary.
 
-Status: confirmed on 2026-07-13.
+### P2: No API authentication
 
-next.config.mjs currently sets typescript.ignoreBuildErrors to true.
-Running tsc --noEmit reports errors in:
+Endpoints are public and protected only by CORS (browsers), bounded inputs and
+rate limits. Limits are in-process memory: they reset on restart and are not
+shared across instances. Fine for one Render instance; move to Redis or
+Postgres before scaling out, and put expensive routes behind auth if usage
+grows.
 
-- components/energy/tabs/market-pulse.tsx
-- components/energy/tabs/reroute-matrix.tsx
-- components/energy/tabs/risk-intelligence.tsx
-- components/energy/tabs/war-room.tsx
-- tests/e2e/smoke.spec.ts
+### P2: Model simplifications
 
-Target remediation: fix all strict errors, remove ignoreBuildErrors, and add
-type checking to continuous integration.
+- SDI is capped when AIS is down (the live vessel weight is not redistributed;
+  backtests do redistribute it).
+- Backtest days without headlines score ~25 instead of carrying the last
+  value forward.
+- SPR assumes a 100 % full reserve (stated in the UI); chokepoint import shares
+  are static 2024 values, and Gibraltar's (0.08) is an estimate.
+- Reroute routes through Malacca and the Cape cannot be restricted by the
+  route engine, so those rows are labelled `unverified`.
+- Supplier risk matches countries by text, not entity resolution.
+- The sanctioned-source list is a country list, not sanctions screening.
 
-Acceptance criteria: both tsc --noEmit and next build pass without suppressing
-type errors.
+### P3: No real-device testing; logo pending
 
-## Operational note: Sentinel Gemini usage
+Mobile layouts are checked with Playwright phone emulation only.
 
-The live worker calls process_unprocessed_batch(batch_size=10) once per
-scheduled cycle. Sentinel builds one prompt containing those ten headlines and
-performs one Gemini generate_content call; it does not internally split the
-batch into two five-headline calls. Historical backtests and War Room briefings
-have separate Gemini usage and should be budgeted independently.
+## Resolved
 
-## Operational note: Backtest Vessel Density Exclusion
+- **Strict TypeScript** (Nov 2026): `ignoreBuildErrors` removed; `tsc --noEmit`
+  runs in Frontend CI.
+- **Dashboard GET paths** call no external APIs: Brent/BOAT statistics read
+  the local cache, and SDI snapshots are written by the worker.
+- **Stale production data** (Nov 2026): ingestion moved to an hourly GitHub
+  Actions job, independent of the Render instance sleeping.
+- **Reroute route verification** (Nov 2026): lead times use the route that
+  avoids the blocked passage; rows state how the route was established.
 
-Historical backtest runs (via `run_backtest.py`) structurally exclude the vessel 
-density term (`delta_d_vessel`) because historical AIS ingestion data is unavailable
-for dates prior to system deployment. To avoid diluting the historical index with 
-a neutral/dead weight, the backtest recalculates the SDI by proportionally 
-redistributing the vessel weight (`w2`) across the remaining three signals 
-(geopolitical risk, price, and freight). The historical index is therefore a true
-3-signal composite, while the live system uses a 4-signal composite.
+## Operational notes
+
+**Sentinel Gemini usage.** Each ingestion run makes one Gemini call for a
+batch of up to 10 headlines. Backtests and War Room briefs use Gemini
+separately and should be budgeted independently.
+
+**Backtest vessel term.** Historical AIS does not exist, so backtests
+redistribute the vessel weight (`w2`) proportionally across the other three
+signals. The historical index is a 3-signal composite; the live one is 4-signal.

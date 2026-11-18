@@ -1,33 +1,31 @@
 # Deployment Runbook — Free-Tier Hosting
 
-Target architecture:
-
 ```
 Browser
    │
-   ├── Cloudflare Pages ............ Next.js frontend (static export)   [LIVE]
+   ├── Cloudflare Pages ............ Next.js frontend (static export)
    │        │ HTTPS
    │        ▼
-   └── Render Web Service .......... FastAPI + in-process cron worker
+   └── Render Web Service .......... FastAPI (read-only API)
             │
             ├── Neon ................ PostgreSQL (pooled endpoint)
             └── Neo4j AuraDB Free ... knowledge graph
+
+GitHub Actions (ingest.yml, hourly) ── writes ──► Neon / AuraDB
 ```
 
-The service holds no data, so it can be rebuilt without loss.
+Live: <https://energy-supply-chain.pages.dev> · API:
+`https://energy-supply-chain-backend.onrender.com`
 
-**Frontend is already deployed:** <https://energy-supply-chain.pages.dev/>
-It renders but shows no data until the backend below exists.
+The API holds no state of its own, so it can be rebuilt without loss.
 
 ---
 
 ## 0. Before you start
 
-**Rotate every API key.** The keys currently in `backend/.env` (Gemini ×3,
-AISStream, NewsData, GNews, NewsAPI) have been pasted into chat logs. Generate
-fresh ones and put the new values only into Render's environment settings.
-
-Verify nothing secret is tracked:
+**Rotate any key that has ever been pasted into a chat, issue or log.** Put
+the new values only into the platform settings (Render, GitHub secrets),
+never into a committed file.
 
 ```bash
 git ls-files | grep -E "\.env$"      # must return nothing
@@ -39,37 +37,26 @@ git ls-files | grep -E "\.env$"      # must return nothing
 
 Read this before changing intervals — the defaults are not arbitrary.
 
-**Render** gives 750 instance-hours per month per workspace. A 31-day month is
-744 hours, so keeping one service awake around the clock leaves ~6 hours of
-headroom and **only works if you run no other free service on the account**.
-Free services also sleep after 15 minutes of inactivity, so an external pinger
-is required to stay up.
+**Render** gives 750 instance-hours per month. Free services sleep after 15
+minutes without inbound traffic, and an in-process worker sleeps with them.
+That is why ingestion now runs on GitHub Actions: data stays fresh whether or
+not anyone is visiting, and the API only needs to be awake to serve requests.
 
-**Neon** bills compute-hours, not queries, and cannot scale to zero until
-~5 idle minutes have passed. Every wake-up therefore costs a 5-minute minimum
-regardless of how little work you did. This makes *frequency* far more
-expensive than *duration*, which is why:
+**Neon** bills compute-hours, not queries, and needs ~5 idle minutes to scale
+to zero, so *frequency* costs far more than *duration*:
 
-- `CRON_INTERVAL_MINUTES` defaults to **60**, not 15. At 15-minute ticks the
-  database is awake roughly 37% of the month; at 60 it is under 10%.
-- `/healthz` touches **no database**. Point your uptime pinger at it and
-  nothing else. Pinging a data endpoint every 5 minutes would hold Neon open
-  permanently and drain the allowance with no users at all.
-- Backtests are dispatched in-process instead of through a polled queue. The
-  old 30-second poll ran a query twice a minute forever, which alone was
-  enough to stop Neon ever going idle.
+- Ingestion runs hourly (`17 * * * *`), not every 15 minutes.
+- `/healthz` touches **no database**. Point uptime pingers at it and nothing
+  else; pinging a data endpoint would hold Neon awake permanently.
+- Backtests are dispatched in-process rather than through a polled queue.
 
-**Check your Neon compute size before trusting the estimates.** CU-hours are
-compute-units × wall-clock-hours, so a 100 CU-hour allowance buys 400 hours at
-0.25 CU but only 100 hours at 1 CU. If yours is 1 CU, raise
-`AIS_INTERVAL_MINUTES` to `180` — the AIS window is the single most expensive
-recurring job because it holds the database awake across a 10-minute
-collection.
+**Check your Neon compute size.** CU-hours = compute units × hours, so 100
+CU-hours buys 400 h at 0.25 CU but 100 h at 1 CU. The AIS window holds the
+database awake for ~10 minutes per run; at 1 CU consider running AIS less
+often.
 
-**Memory.** The dependency stack measures ~190 MB resident once loaded
-(pandas 67 MB, then fastapi/neo4j/sqlalchemy/yfinance/searoute incrementally).
-On a 512 MB instance that leaves room for request handling and exactly one
-backtest, which is why `BACKTEST_MAX_CONCURRENT` defaults to 1.
+**Memory.** The stack is ~190 MB resident. On a 512 MB instance that leaves
+room for request handling and one backtest, hence `BACKTEST_MAX_CONCURRENT=1`.
 
 ---
 
@@ -77,57 +64,55 @@ backtest, which is why `BACKTEST_MAX_CONCURRENT` defaults to 1.
 
 ### 2.1 Neon (PostgreSQL)
 
-1. Create a project. **Pick the region closest to your Render region** — every
-   round trip crosses this link.
-2. Copy the **pooled** connection string (it contains `-pooler`). This matters:
-   SQLAlchemy is configured `pool_size=5, max_overflow=10`, so it can open up
-   to 15 connections — more than free-tier direct limits typically allow.
-3. Note the **compute size** (see §1). It decides your real budget.
-4. Load the schema. The app creates tables itself on boot via `init_schema()`,
-   so you can either let it, or seed historical data first:
+1. Create a project in the region closest to Render.
+2. Copy the **pooled** connection string (contains `-pooler`): SQLAlchemy can
+   open up to 15 connections, more than direct free-tier limits allow.
+3. Tables are created on boot by `init_schema()` (idempotent, including
+   `ADD COLUMN IF NOT EXISTS` migrations). To carry history across:
 
 ```bash
-# optional: move your existing local data across
 pg_dump -U postgres energy_resilience > dump.sql
 psql "<neon-pooled-url>" < dump.sql
 ```
 
 ### 2.2 Neo4j AuraDB Free
 
-1. Create the one free instance (one per account).
-2. Save the generated password — it is shown **once**.
-3. Note the `neo4j+s://` URI.
+1. Create the free instance (one per account) and save the password — it is
+   shown **once**.
+2. Note the `neo4j+s://<id>.databases.neo4j.io` URI.
 
-No import needed: the graph is seeded from code by `seed_graph()`, which runs
-on startup. It is only 60 nodes / 84 relationships.
+No import needed: `seed_graph()` seeds it from code on startup (~60 nodes).
 
-Aura Free pauses when idle. The worker queries it each cycle, so it stays
-awake while the service runs — but after several days down, expect to resume
-it manually from the console.
+**Aura Free pauses after a few days without activity and is deleted if left
+paused.** The hourly ingestion job touches the graph, which keeps it active.
+If the logs show `Failed to DNS resolve address <id>.databases.neo4j.io`, the
+instance is gone: create a new one and update `NEO4J_URI` / `NEO4J_PASSWORD`
+in Render **and** in the GitHub secrets. Until then the API serves the graph
+from seed data, so the Reroute page keeps working.
 
 ---
 
-## 3. Render
+## 3. Render (API)
 
 ### 3.1 Create the service
 
-New → **Web Service** → connect the GitHub repo.
+New → **Web Service** → connect the repo.
 
 | setting | value |
 |---|---|
 | Root directory | `backend` |
-| Runtime | Docker |
+| Runtime | Docker (`backend/Dockerfile`) |
 | Instance type | Free |
 | Health check path | `/healthz` |
+| Auto-Deploy | **After CI checks pass** |
 
-The repo's `backend/Dockerfile` is used as-is. It already binds `$PORT`, runs
-as a non-root user, and healthchecks `/healthz`.
+The image binds `$PORT`, runs as a non-root user and healthchecks `/healthz`.
 
 ### 3.2 Environment variables
 
-Set these in the Render dashboard. Do **not** commit a `.env` — `load_dotenv`
-runs with `override=True`, so a `.env` inside the image would silently win
-over everything set here. `.dockerignore` excludes it for that reason.
+`load_dotenv()` does not override variables set by the platform, and
+`.dockerignore` keeps `.env` out of the image, so Render's settings are
+authoritative.
 
 ```bash
 # Databases
@@ -142,138 +127,141 @@ NEO4J_URI=neo4j+s://<id>.databases.neo4j.io
 NEO4J_USER=neo4j
 NEO4J_PASSWORD=<aura-password>
 
-# Run the pipeline inside this process — Render's free tier covers a web
-# service but bills a separate background worker.
-RUN_WORKER=1
+# Ingestion runs on GitHub Actions (§4). Keep this 0 once that is green;
+# set 1 only if you want the API to run the scheduler itself instead.
+RUN_WORKER=0
 
-# Frontend origin — must match exactly, no trailing slash
+# CORS — exact production origin, plus a regex for Cloudflare previews
 CORS_ORIGINS=https://energy-supply-chain.pages.dev
+CORS_ORIGIN_REGEX=^https://([a-z0-9-]+\.)?energy-supply-chain\.pages\.dev$
 
-# Rotated keys (see §0)
+# Gemini (War Room brief; Sentinel runs in the ingestion job)
 GEMINI_API_KEY=...
-GEMINI_API_KEYS=...           # comma-separated pool, optional
-AISSTREAM_API_KEY=...
-NEWSDATA_API_KEY=...
-GNEWS_API_KEY=...
-NEWSAPI_API_KEY=...
+GEMINI_API_KEYS=...           # optional comma-separated pool
+GEMINI_MODEL=gemini-flash-latest
+GEMINI_FALLBACK_MODEL=gemini-flash-lite-latest
 
-# Tuning — see §1 before changing
-CRON_INTERVAL_MINUTES=60
-AIS_INTERVAL_MINUTES=60       # raise to 180 if Neon compute is 1 CU
 BACKTEST_MAX_CONCURRENT=1
 LOG_TO_FILE=0
 ```
 
-**Keep the service at one instance and one uvicorn worker.** Two would each
-start their own scheduler, doubling every job and every metered Gemini call.
-The Dockerfile's default `CMD` is already single-worker; do not add
-`--workers`.
+**One instance, one uvicorn worker.** Rate limits and the War Room cache are
+in-process memory; a second instance would have its own. The Dockerfile's
+`CMD` is single-worker; do not add `--workers`.
 
 ### 3.3 First boot
 
-The port binds in well under a second; schema setup, the Neo4j seed and the
-first ingestion cycle run behind it (measured at 0.6s to first response with
-both databases unreachable). Expect the dashboard to stay empty for a few
-minutes after deploy while that first cycle completes.
-
----
-
-## 4. Keep it awake
-
-Render sleeps a free service after 15 minutes idle. Add an uptime monitor:
-
-- URL: `https://<your-service>.onrender.com/healthz`
-- Interval: 10 minutes
-
-**It must be `/healthz`.** Any other route queries Postgres and would keep
-Neon awake permanently — see §1.
-
----
-
-## 5. Point the frontend at it
-
-`NEXT_PUBLIC_API_URL` is compiled into the bundle at build time, so setting it
-is not enough — you must rebuild.
-
-1. Cloudflare Pages → your project → Settings → **Variables and secrets**
-2. Add `NEXT_PUBLIC_API_URL = https://<your-service>.onrender.com`
-3. Deployments → **Retry deployment** (or push a commit)
-
-Miss the rebuild and the deployed bundle keeps its `http://localhost:8000`
-fallback.
-
----
-
-## 6. Verify
-
-```bash
-# 1. Health — must answer instantly, even during startup
-curl -s https://<service>.onrender.com/healthz
-# {"status":"ok"}
-
-# 2. Data layer — the real check that Neon and Aura are reachable
-curl -s https://<service>.onrender.com/api/metrics/live | head -c 300
-
-# 3. CORS — must echo the Pages origin, not "*"
-curl -sI -H "Origin: https://energy-supply-chain.pages.dev" \
-     https://<service>.onrender.com/api/metrics/live \
-     | grep -i access-control-allow-origin
-
-# 4. Frontend calls the right host
-#    Load the dashboard, open devtools → Network, confirm requests go to
-#    onrender.com and not localhost.
-```
-
-In Render's logs after a successful boot you should see:
+The port binds in under a second; schema setup and the Neo4j seed run behind
+it. Expect these log lines:
 
 ```
-CORS allowed origins: ['https://energy-supply-chain.pages.dev']
+CORS allowed origins: ['https://energy-supply-chain.pages.dev'] (regex: ^https://...)
 Database schema verified.
 Neo4j knowledge graph verified.
-RUN_WORKER=1 — running an initial ingestion cycle ...
-Scheduling — cycle every 60m, AIS every 60m, PortWatch 12h, retention 24h.
-In-process cron scheduler started.
 ```
 
 ---
 
-## 7. Ongoing
+## 4. Ingestion (GitHub Actions)
 
-**Watch the two budgets.** Render instance-hours and Neon compute-hours are
-the limits you will hit first, and neither fails loudly — the service simply
-stops. Check both consoles monthly.
+`.github/workflows/ingest.yml` runs `python cron_worker.py --once --with ais`
+every hour at :17, adding `portwatch,retention` at 00:xx and 12:xx UTC. It can
+also be started by hand: Actions → **ingest** → Run workflow.
 
-**Watch for stall warnings.** A step running past `SLOW_STEP_WARN_SECONDS`
-(default 900) logs `possible stall`. Steps run in separate threads, so one
-stalling no longer blocks the others, but a repeated warning means an upstream
-API is hanging.
+Add **repository secrets** (Settings → Secrets and variables → Actions) with
+the same values as Render:
 
-**Backtests do not survive a restart.** They run in daemon threads; anything
-mid-flight when the instance sleeps or redeploys is reaped and marked failed
-on next boot. That is expected on a tier that idles out, not a bug.
+`DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD GEMINI_API_KEYS AISSTREAM_API_KEY
+NEWSDATA_API_KEY GNEWS_API_KEY NEWSAPI_API_KEY NEO4J_URI NEO4J_USER NEO4J_PASSWORD`
 
-**A second concurrent backtest returns 503.** The cap exists because two at
-once will not fit in 512 MB. Raise `BACKTEST_MAX_CONCURRENT` only on a larger
-instance.
+Optional repository **variable** `GEMINI_MODEL`. Until `DB_HOST` exists the
+job skips itself with a notice instead of failing.
+
+Then set `RUN_WORKER=0` on Render so the pipeline does not run twice.
+
+> Scheduled workflows on a public repo are paused by GitHub after 60 days
+> without repository activity. Re-enable from the Actions tab if that happens.
+
+---
+
+## 5. Keep the API awake (optional)
+
+Render sleeps after 15 idle minutes; the first request after that takes
+~30–60 s. Frontend requests time out at 60 s, which covers a cold start. To
+avoid it entirely, add an uptime monitor on
+`https://<service>.onrender.com/healthz` every 10 minutes — **only `/healthz`**,
+for the Neon reason in §1.
+
+---
+
+## 6. Cloudflare Pages (frontend)
+
+| setting | value |
+|---|---|
+| Root directory | `frontend` |
+| Build command | `npm run build` |
+| Output directory | `out` |
+| Production branch | `main` |
+
+Variables are compiled into the bundle at build time, so **set them for both
+Production and Preview, then rebuild**:
+
+| Variable | Value |
+|---|---|
+| `NEXT_PUBLIC_API_URL` | `https://energy-supply-chain-backend.onrender.com` |
+| `NEXT_PUBLIC_CARTO_KEY` | your CARTO key (optional; Esri tiles otherwise) |
+
+A production build (`CF_PAGES_BRANCH=main`) **fails on purpose** if
+`NEXT_PUBLIC_API_URL` is missing or points at localhost. Preview builds are not
+blocked, but without the variable they ship a site that cannot reach the API.
+
+`frontend/public/_headers` sets the CSP, HSTS, `X-Frame-Options: DENY` and a
+Permissions-Policy. Its `connect-src` names the Render URL, so update it if the
+API moves.
+
+---
+
+## 7. Verify
+
+```bash
+B=https://energy-supply-chain-backend.onrender.com
+
+curl -s $B/healthz                                   # {"status":"ok"}
+curl -s $B/api/metrics/live | head -c 300            # Neon + data reachable
+curl -s -o /dev/null -w "%{http_code}\n" "$B/api/risk/events?limit=500"   # 422 = current code deployed
+
+curl -sI -H "Origin: https://energy-supply-chain.pages.dev" $B/api/metrics/live \
+  | grep -i access-control-allow-origin             # echoes the origin, never "*"
+
+curl -sI https://energy-supply-chain.pages.dev/ | grep -i content-security-policy
+```
+
+In the dashboard, open devtools → Network and confirm requests go to
+`onrender.com`, and that the data-health panel shows each feed's state.
+
+---
+
+## 8. Ongoing
+
+- **Budgets:** Render instance-hours and Neon compute-hours fail silently —
+  check both consoles monthly.
+- **Stalls:** a step running past `SLOW_STEP_WARN_SECONDS` (900) logs
+  `possible stall`; repeated warnings mean an upstream API is hanging.
+- **Backtests** run in daemon threads and do not survive a restart; anything
+  mid-flight is marked failed on next boot. A second concurrent backtest
+  returns 503.
+- **AIS 429s** in the ingestion logs are retried automatically; persistent
+  ones mean AISStream is throttling that IP.
 
 ---
 
 ## Appendix: running locally
 
-Unchanged — two processes, as before:
-
 ```bash
-# Terminal 1
-cd backend && python cron_worker.py
-
-# Terminal 2
-cd backend && uvicorn api:app --reload
-
-# Terminal 3
-cd frontend && npm run dev
+cd backend && uvicorn api:app --reload      # API (RUN_WORKER defaults to 0)
+cd backend && python cron_worker.py         # scheduler, optional
+cd frontend && npm run dev                  # UI on :3000
 ```
 
-`RUN_WORKER` defaults to `0`, so the API does not schedule anything locally.
-If you do set it while `cron_worker.py` is running, the API detects the
-existing worker through a cross-process lock and defers to it rather than
-double-running the pipeline.
+If you set `RUN_WORKER=1` while `cron_worker.py` is running, the API sees the
+existing worker through a cross-process lock and defers to it.
