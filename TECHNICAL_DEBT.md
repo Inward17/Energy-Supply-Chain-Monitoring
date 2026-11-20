@@ -33,13 +33,14 @@ Backend CI's "create Neon branch" step fails with 412; CI falls back to a
 throwaway Postgres container, so tests still run, but not against
 production-like data. `continue-on-error` hides it; check the job summary.
 
-### P2: No API authentication
+### P2: No user authentication
 
-Endpoints are public and protected only by CORS (browsers), bounded inputs and
-rate limits. Limits are in-process memory: they reset on restart and are not
-shared across instances. Fine for one Render instance; move to Redis or
-Postgres before scaling out, and put expensive routes behind auth if usage
-grows.
+The dashboard is public by design. Spend is bounded instead: backtests need the
+maintainer's `ADMIN_API_KEY`; War Room briefs have a daily cap shared through
+Postgres (`WAR_ROOM_DAILY_BRIEFS`). Per-client rate limits are still in-process
+memory (reset on restart, not shared across instances) — fine for one Render
+instance; move them to Postgres or Redis before scaling out. Add real user
+auth (e.g. Cloudflare Access) if the War Room needs to be restricted.
 
 ### P2: Model simplifications
 

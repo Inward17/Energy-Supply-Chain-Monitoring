@@ -148,6 +148,12 @@ LOG_TO_FILE=0
 # (default) trusts CF-Connecting-IP, which Cloudflare sets and refuses from
 # clients; "none" uses the TCP peer. X-Forwarded-For is never trusted.
 TRUSTED_PROXY=cloudflare
+
+# Backtests are maintainer-only; empty disables them. Type the same key into
+# the History page (kept in that browser tab only) to start one.
+ADMIN_API_KEY=<random 32+ chars>
+# Shared daily cap on War Room AI briefs (stored in Postgres)
+WAR_ROOM_DAILY_BRIEFS=50
 ```
 
 **One instance, one uvicorn worker.** Rate limits and the War Room cache are

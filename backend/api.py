@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import hmac
 import os
 import threading
 import time
@@ -52,6 +53,7 @@ from src.agents.modeler_agent import (
 )
 from src.database.postgres_db import (
     DatabaseUnavailable,
+    try_consume_daily_quota,
     init_schema,
     fetch_unprocessed_news,
     fetch_vessels,
@@ -140,7 +142,7 @@ app.add_middleware(
     allow_origin_regex=CORS_ORIGIN_REGEX,
     allow_credentials=_CORS_ALLOW_CREDENTIALS,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_headers=["Content-Type", "Authorization", "X-Admin-Key"],
 )
 logger.info("CORS allowed origins: %s (regex: %s)", CORS_ORIGINS, CORS_ORIGIN_REGEX)
 
@@ -173,6 +175,29 @@ _brief_cache: dict[tuple, tuple[float, str]] = {}
 _brief_lock = threading.Lock()
 
 
+# Backtests make hundreds of Gemini calls, so starting one is maintainer-only.
+# The static frontend cannot hold a secret; the maintainer types the key into
+# the History page, which keeps it in sessionStorage for that tab only.
+ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "")
+
+
+def _require_admin(request: Request) -> None:
+    if not ADMIN_API_KEY:
+        raise HTTPException(status_code=403, detail="Backtests are disabled on this deployment.")
+    supplied = request.headers.get("x-admin-key", "")
+    if not hmac.compare_digest(supplied.encode(), ADMIN_API_KEY.encode()):
+        raise HTTPException(status_code=401, detail="Admin key required.")
+
+
+# Shared daily cap on War Room briefs (Gemini calls), stored in Postgres so it
+# holds across restarts and instances; the in-process limiter is per process.
+WAR_ROOM_DAILY_BRIEFS = int(os.getenv("WAR_ROOM_DAILY_BRIEFS", "50"))
+_BRIEF_BUDGET_SPENT = (
+    "\u26a0\ufe0f Today's AI briefing budget is used up. The figures above are "
+    "complete; the narrative returns after the daily reset."
+)
+
+
 def _war_room_evidence(top: dict[str, Any], spr: dict[str, Any]) -> dict[str, Any]:
     """Freshness and provenance for the War Room brief. Best effort: a failure
     here must not block the brief, so unknown values are reported as None."""
@@ -197,6 +222,9 @@ def _cached_brief(key: tuple, build) -> str:
         hit = _brief_cache.get(key)
         if hit and now - hit[0] < _BRIEF_TTL_S:
             return hit[1]
+    # Cache hits are free; only a Gemini call spends the shared daily budget.
+    if not try_consume_daily_quota("gemini:war_room", WAR_ROOM_DAILY_BRIEFS):
+        return _BRIEF_BUDGET_SPENT
     text = build()
     # Don't cache the "unavailable" placeholder; the next click should retry.
     if not text.startswith("\u26a0"):
@@ -433,6 +461,7 @@ def get_risk_events(limit: int = Query(10, ge=1, le=200)) -> list[dict[str, Any]
                 "source_fetched_at": str(e.get("source_fetched_at", "")),
                 "source_urls":      e.get("source_urls", []),
                 "sources_verified": e.get("sources_verified"),
+                "corroborated":     e.get("corroborated"),
             })
         return result
     except Exception as exc:
@@ -526,6 +555,7 @@ def get_risk_event_detail(event_id: int = Path(..., ge=1, le=2_147_483_647)) -> 
             "source_fetched_at": str(e.get("source_fetched_at", "")),
             "source_urls":      e.get("source_urls", []),
             "sources_verified": e.get("sources_verified"),
+            "corroborated":     e.get("corroborated"),
         }
     except HTTPException:
         raise
@@ -972,6 +1002,7 @@ def trigger_backtest(req: BacktestRequest, request: Request) -> dict[str, Any]:
     backtest_dispatch. Running it here removes the poll and starts the job now
     rather than up to 30 s later.
     """
+    _require_admin(request)
     _backtest_limit.check(request)
     try:
         job_id = create_backtest_job(req.event_name)

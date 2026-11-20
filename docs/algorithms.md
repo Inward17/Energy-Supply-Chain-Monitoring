@@ -121,6 +121,13 @@ row and counts at full severity.
   "Batch context", not evidence.
 - A batch Gemini answers with no relevant events is marked processed. A failed
   call leaves it for the next cycle.
+- **Corroboration.** A severity of 0.7 or more (`CORROBORATION_SEVERITY`) rests
+  on one model reading of scraped headlines, so it needs model-cited headlines
+  from at least 2 distinct sites (`CORROBORATION_MIN_SOURCES`). Otherwise the
+  severity is capped at 0.6 (`UNCORROBORATED_SEVERITY_CAP`), the event is
+  stored with `corroborated = FALSE`, the reasoning records the model's
+  original score, and the event drawer says so. Batch-context sources never
+  count. Below the threshold the event is not assessed (`NULL`).
 
 ---
 

@@ -28,6 +28,16 @@ export function HistoryPage() {
   const [err, setErr] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [triggering, setTriggering] = useState(false)
+  // Backtests spend Gemini quota, so starting one needs the maintainer's key.
+  // Kept for this tab only; never in localStorage or the bundle.
+  const [adminKey, setAdminKey] = useState("")
+  useEffect(() => {
+    try { setAdminKey(sessionStorage.getItem("meridian-admin-key") ?? "") } catch { /* storage blocked */ }
+  }, [])
+  const rememberKey = (v: string) => {
+    setAdminKey(v)
+    try { sessionStorage.setItem("meridian-admin-key", v) } catch { /* storage blocked */ }
+  }
 
   // Switching events quickly must not let an older response win.
   const current = useRef("")
@@ -63,10 +73,15 @@ export function HistoryPage() {
   const run = async () => {
     setTriggering(true)
     try {
-      await triggerBacktest(sel)
+      await triggerBacktest(sel, adminKey)
       setJobs(await fetchBacktestJobs())
-    } catch {
-      setErr("Could not start the backtest — another run may be in progress.")
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : ""
+      setErr(
+        msg.includes("401") ? "Admin key required or not accepted."
+        : msg.includes("403") ? "Backtests are disabled on this deployment."
+        : "Could not start the backtest — another run may be in progress.",
+      )
     } finally {
       setTriggering(false)
     }
@@ -112,10 +127,20 @@ export function HistoryPage() {
             </div>
           )
         })}
+        <label className="flex flex-col gap-1">
+          <span className="eyebrow">Admin key (maintainer only)</span>
+          <input
+            type="password"
+            autoComplete="off"
+            value={adminKey}
+            onChange={(e) => rememberKey(e.target.value)}
+            className="h-10 rounded-[10px] border border-edge bg-well px-3 text-[13px] text-head"
+          />
+        </label>
         <button
           type="button"
           onClick={() => void run()}
-          disabled={triggering || running}
+          disabled={triggering || running || !adminKey}
           className="h-11 shrink-0 rounded-[10px] bg-accent px-4 text-[13px] font-bold text-[var(--x-06121f)] disabled:opacity-50"
         >
           {running ? "Backtest running…" : triggering ? "Starting…" : selJob?.status === "failed" ? "Retry this backtest" : "Run backtest"}
