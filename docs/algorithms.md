@@ -239,3 +239,7 @@ exist, so the vessel weight is redistributed proportionally across the other
 three signals: backtests are a 3-signal composite, the live index is 4-signal.
 Days without headlines currently score about 25 instead of carrying the last
 value forward (see `TECHNICAL_DEBT.md`).
+
+Lead time = Brent breakout date − first SDI alert date. It is `null` (not 0)
+when either observation is missing, with `missing_observations` naming which;
+0 means both happened on the same day.
