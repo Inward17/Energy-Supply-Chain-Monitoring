@@ -207,8 +207,23 @@ export function WarRoomPage() {
             </div>
             {aiState === "done" && ai?.executive_brief && (
               <div className="flex flex-col gap-1.5 border-t border-hair pt-4">
-                <span className="eyebrow text-accent">AI narrative</span>
+                <span className="eyebrow text-accent">AI narrative · draft, not reviewed for operational use</span>
                 <p className="whitespace-pre-wrap text-sm leading-relaxed text-fg">{ai.executive_brief}</p>
+                {ai.evidence && (
+                  <div className="mt-1 flex flex-col gap-1 rounded-[10px] bg-well p-3 text-xs text-muted">
+                    <span className="eyebrow">What this rests on</span>
+                    <span>
+                      News to {ai.evidence.newest_event_at ? new Date(ai.evidence.newest_event_at).toUTCString().slice(5, 16) : "unknown"}
+                      {" · "}market close {ai.evidence.market_close ?? "unknown"}
+                      {" · "}AIS {ai.evidence.ais_status ?? "unknown"}
+                      {" · "}graph {ai.evidence.graph_status === "live" ? "live" : <span className="text-warn">seed data (not live)</span>}
+                      {" · "}route {ai.evidence.route_basis}
+                    </span>
+                    {ai.evidence.spr_assumptions.length > 0 && (
+                      <ul className="list-disc pl-4">{ai.evidence.spr_assumptions.map((a) => <li key={a}>{a}</li>)}</ul>
+                    )}
+                  </div>
+                )}
               </div>
             )}
             <span className="text-[11px] text-faint">Facts above come straight from the models; the AI narrative is added when ready and never blocks the brief.</span>

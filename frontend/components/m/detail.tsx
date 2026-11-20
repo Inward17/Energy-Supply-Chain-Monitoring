@@ -180,7 +180,10 @@ function EventBody({ e }: { e: RiskEventDetail }) {
       )}
       {e.source_urls?.length ? (
         <div className="flex flex-col gap-2">
-          <Eyebrow>{e.sources_verified === false ? "Batch context" : "Sources"} · {e.source_urls.length}</Eyebrow>
+          <Eyebrow>{e.sources_verified === false ? "Batch context" : "Model-cited sources"} · {e.source_urls.length}</Eyebrow>
+          {e.sources_verified !== false && (
+            <p className="text-xs text-muted">Headlines the model linked to this event. Attribution, not independent corroboration.</p>
+          )}
           {e.sources_verified === false && (
             <p className="text-xs text-warn">The model did not link specific headlines to this event; these are all articles scored in the same batch, not direct evidence for it.</p>
           )}

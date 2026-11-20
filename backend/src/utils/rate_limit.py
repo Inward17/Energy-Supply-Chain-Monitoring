@@ -22,7 +22,7 @@ from __future__ import annotations
 import os
 import threading
 import time
-from collections import defaultdict, deque
+from collections import deque
 
 from fastapi import HTTPException, Request
 
@@ -53,36 +53,60 @@ class RateLimiter:
         self.per_client = per_client
         self.global_limit = global_limit
         self.window_s = window_s
-        self._hits: dict[str, deque[float]] = defaultdict(deque)
+        self._hits: dict[str, deque[float]] = {}
         self._all: deque[float] = deque()
         self._lock = threading.Lock()
+        self._last_sweep = time.monotonic()
 
     def _prune(self, q: deque[float], now: float) -> None:
         while q and now - q[0] > self.window_s:
             q.popleft()
 
+    def _sweep(self, now: float) -> None:
+        """Forget clients whose newest hit has left the window.
+
+        A client's timestamps are otherwise pruned only when it returns, so an
+        idle client kept its entry forever. Runs at most once a minute (or once
+        per window, if shorter), O(clients).
+        """
+        if now - self._last_sweep < min(self.window_s, 60.0):
+            return
+        self._last_sweep = now
+        stale = [k for k, q in self._hits.items() if not q or now - q[-1] > self.window_s]
+        for k in stale:
+            del self._hits[k]
+
     def check(self, request: Request) -> None:
-        """Raise 429 when either window is full; otherwise record the hit."""
+        """Raise 429 when either window is full; otherwise record the hit.
+
+        Nothing is allocated for a request that is rejected, so a flood of
+        new client keys cannot grow memory once the global window is full.
+        """
         key = client_ip(request)
         now = time.monotonic()
         with self._lock:
-            q = self._hits[key]
-            self._prune(q, now)
+            self._sweep(now)
             self._prune(self._all, now)
-            if len(q) >= self.per_client or len(self._all) >= self.global_limit:
-                oldest = q[0] if len(q) >= self.per_client else self._all[0]
+            q = self._hits.get(key)
+            if q is not None:
+                self._prune(q, now)
+            client_full = q is not None and len(q) >= self.per_client
+            if client_full or len(self._all) >= self.global_limit:
+                oldest = q[0] if client_full else self._all[0]
                 retry = max(1, int(self.window_s - (now - oldest)) + 1)
                 raise HTTPException(
                     status_code=429,
                     detail="Too many requests. Try again shortly.",
                     headers={"Retry-After": str(retry)},
                 )
+            if q is None:
+                q = self._hits[key] = deque()
             q.append(now)
             self._all.append(now)
-            # Drop idle clients so the map cannot grow without bound.
-            if len(self._hits) > 10_000:
-                for k in [k for k, v in self._hits.items() if not v]:
-                    del self._hits[k]
+
+    def tracked_clients(self) -> int:
+        with self._lock:
+            return len(self._hits)
 
     def reset(self) -> None:
         with self._lock:

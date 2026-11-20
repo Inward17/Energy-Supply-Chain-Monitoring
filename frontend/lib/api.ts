@@ -259,6 +259,16 @@ export interface WarRoomResult {
   burndown_series: BurndownPoint[]
   executive_brief: string
   diagnostic?: Diagnostic
+  /** What the brief rests on; the AI text is an unreviewed narrative over it. */
+  evidence?: {
+    newest_event_at: string | null
+    market_close: string | null
+    ais_status: string | null
+    graph_status: "live" | "seed"
+    route_basis: "verified" | "unverified" | "estimated"
+    spr_assumptions: string[]
+  }
+  brief_reviewed?: boolean
 }
 
 // ── API Functions ─────────────────────────────────────────────────────────────
@@ -433,15 +443,20 @@ export interface BacktestPoint {
 export interface BacktestSensitivityPoint {
   threshold: number
   alert_date: string | null
-  lead_time_days: number
+  /** null when the alert or the Brent breakout is missing; 0 = same day. */
+  lead_time_days: number | null
 }
 
 export interface BacktestResult {
   series: BacktestPoint[]
   system_alert_date: string | null
   market_reaction_date: string | null
-  lead_time_days: number
+  /** null when an observation is missing (see missing_observations); 0 = same day. */
+  lead_time_days: number | null
+  missing_observations?: ("alert" | "market_reaction")[]
   verdict: string
+  signals?: number
+  methodology?: string
   sdi_threshold?: number
   threshold_sensitivity?: BacktestSensitivityPoint[]
 }

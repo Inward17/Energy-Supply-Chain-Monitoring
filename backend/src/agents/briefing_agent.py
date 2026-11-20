@@ -12,7 +12,24 @@ from google import genai
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 from src.agents.sentinel_agent import _sanitise_headline, generate_with_fallback
 
-def generate_emergency_brief(scenario_name, target_refinery, spr_data, reroute_df):
+def _evidence_text(evidence: dict | None) -> str:
+    """Data basis the brief must disclose: freshness, graph source, route
+    verification and the SPR model's assumptions."""
+    if not evidence:
+        return "    - Data basis unavailable."
+    lines = [
+        f"    - Newest scored news event: {evidence.get('newest_event_at') or 'unknown'}",
+        f"    - Market close used: {evidence.get('market_close') or 'unknown'}",
+        f"    - Vessel (AIS) data: {evidence.get('ais_status') or 'unknown'}",
+        f"    - Knowledge graph: {'live Neo4j' if evidence.get('graph_status') == 'live' else 'built-in seed data (not live)'}",
+        f"    - Top route: {evidence.get('route_basis') or 'unknown'} (verified = route engine confirmed it avoids the blockade)",
+    ]
+    for a in evidence.get("spr_assumptions") or []:
+        lines.append(f"    - SPR assumption: {a}")
+    return "\n".join(lines)
+
+
+def generate_emergency_brief(scenario_name, target_refinery, spr_data, reroute_df, evidence=None):
     """
     Takes the deterministic math from the Fixer and SPR agents and uses 
     Gemini to generate a formal Executive Action Plan.
@@ -50,6 +67,9 @@ def generate_emergency_brief(scenario_name, target_refinery, spr_data, reroute_d
     
     Procurement Optimizer Output:
     {route_text}
+
+    Data basis and assumptions:
+{_evidence_text(evidence)}
     """
 
     prompt = f"""
@@ -67,6 +87,9 @@ def generate_emergency_brief(scenario_name, target_refinery, spr_data, reroute_d
     2. Paragraph 2: Procurement Directive (State exactly where we are buying replacement oil from and the financials).
     3. Paragraph 3: Macro-economic Mitigation (What domestic policies must be activated immediately to survive the supply gap).
     Use a professional, urgent, and highly analytical tone. Do not use markdown headers, just return the paragraphs.
+    Use only figures that appear in SYSTEM OUTPUTS; do not invent numbers. In paragraph 1, state
+    briefly what the figures rest on: data freshness, whether the knowledge graph is live or seed
+    data, and that SPR figures assume a full reserve. This is decision support, not a reviewed plan.
     """
 
     @retry(

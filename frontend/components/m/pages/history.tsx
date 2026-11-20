@@ -97,7 +97,10 @@ export function HistoryPage() {
   const thr = res?.sdi_threshold ?? 65
   const gapDays = sdi.filter((v) => v < NEWS_GAP_SDI).length
   const sens = res?.threshold_sensitivity ?? []
-  const maxLead = Math.max(1, ...sens.map((s) => Math.abs(s.lead_time_days)))
+  const maxLead = Math.max(1, ...sens.map((s) => Math.abs(s.lead_time_days ?? 0)))
+  // null = an observation is missing (never "0 days"); 0 = same day.
+  const lead = res?.lead_time_days ?? null
+  const leadTone = lead != null && lead > 0 ? "safe" : lead == null ? "muted" : "crit"
 
   return (
     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-5">
@@ -150,14 +153,27 @@ export function HistoryPage() {
         {res && !loading && (
           <>
             <section className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-              <div className={`col-span-2 flex flex-col gap-1 rounded-2xl border p-[18px] lg:col-span-1 ${res.lead_time_days > 0 ? "border-safe-line bg-safe-soft" : "border-crit-line bg-crit-soft"}`}>
-                <span className={`eyebrow ${res.lead_time_days > 0 ? "text-safe" : "text-crit-text"}`}>{res.lead_time_days > 0 ? "Early warning" : "No early warning"}</span>
-                <span className="text-[38px] font-bold text-head [font-stretch:108%]">{Math.abs(res.lead_time_days)} days</span>
-                <span className="text-xs text-muted">{res.lead_time_days > 0 ? "before Brent broke out" : "after Brent moved"}</span>
+              <div className={`col-span-2 flex flex-col gap-1 rounded-2xl border p-[18px] lg:col-span-1 ${leadTone === "safe" ? "border-safe-line bg-safe-soft" : leadTone === "crit" ? "border-crit-line bg-crit-soft" : "border-line bg-well"}`}>
+                <span className={`eyebrow ${leadTone === "safe" ? "text-safe" : leadTone === "crit" ? "text-crit-text" : "text-muted"}`}>
+                  {lead == null ? "Lead time unavailable" : lead > 0 ? "Early warning" : lead === 0 ? "Same day" : "No early warning"}
+                </span>
+                <span className="text-[38px] font-bold text-head [font-stretch:108%]">{lead == null ? "—" : `${Math.abs(lead)} days`}</span>
+                <span className="text-xs text-muted">
+                  {lead == null
+                    ? res.missing_observations?.length === 2
+                      ? "no SDI alert and no Brent breakout in this window"
+                      : res.missing_observations?.[0] === "alert"
+                        ? "the SDI never reached the alert level"
+                        : "Brent never broke out in this window"
+                    : lead > 0 ? "before Brent broke out" : lead === 0 ? "alert and breakout on the same day" : "after Brent moved"}
+                </span>
               </div>
               <div className="panel flex flex-col gap-1 rounded-2xl p-[18px]"><Eyebrow>SDI alert ≥ {thr}</Eyebrow><span className="text-lg font-bold text-head lg:text-[22px]">{longDate(res.system_alert_date)}</span></div>
               <div className="panel flex flex-col gap-1 rounded-2xl p-[18px]"><Eyebrow>Brent &gt;1.5σ</Eyebrow><span className="text-lg font-bold text-head lg:text-[22px]">{longDate(res.market_reaction_date)}</span></div>
             </section>
+            <p className="text-xs leading-relaxed text-muted">
+              {res.verdict} Method: {res.methodology ?? "3-signal composite (geopolitical, Brent, freight); the live index adds AIS vessel density."} Historical scores are not directly comparable with the live 4-signal index.
+            </p>
 
             <Panel as="figure" className="m-0 flex flex-col gap-3 p-4 lg:p-[22px]">
               <div className="flex flex-wrap items-baseline justify-between gap-2.5">
@@ -208,13 +224,14 @@ export function HistoryPage() {
                 <div className="grid grid-cols-[48px_1fr_72px] items-center gap-x-3 gap-y-2 font-mono text-xs">
                   {sens.map((s) => {
                     const cur = s.threshold === thr
-                    const late = s.lead_time_days < 0
+                    const late = s.lead_time_days != null && s.lead_time_days < 0
                     const none = !s.alert_date
+                    const noBreakout = !none && s.lead_time_days == null
                     return [
                       <span key={`t${s.threshold}`} className={cur ? "font-semibold text-head" : "text-muted"}>{s.threshold}{cur ? " ←" : ""}</span>,
-                      <div key={`b${s.threshold}`} className={`h-3.5 rounded-sm ${late ? "hatch" : ""}`} style={{ width: none ? "2%" : `${(Math.abs(s.lead_time_days) / maxLead) * 100}%`, background: late ? undefined : cur ? "var(--x-3fcf8e)" : s.lead_time_days < 10 ? "var(--x-6b5a24)" : "var(--x-1f4a36)" }} />,
-                      <span key={`v${s.threshold}`} className={`text-right ${none ? "text-faint" : late ? "text-crit-text" : s.lead_time_days < 10 ? "text-warn" : "text-head"}`}>
-                        {none ? "never" : late ? `${-s.lead_time_days} d late` : `${s.lead_time_days} d`}
+                      <div key={`b${s.threshold}`} className={`h-3.5 rounded-sm ${late ? "hatch" : ""}`} style={{ width: none || noBreakout ? "2%" : `${(Math.abs(s.lead_time_days ?? 0) / maxLead) * 100}%`, background: late ? undefined : cur ? "var(--x-3fcf8e)" : (s.lead_time_days ?? 0) < 10 ? "var(--x-6b5a24)" : "var(--x-1f4a36)" }} />,
+                      <span key={`v${s.threshold}`} className={`text-right ${none || noBreakout ? "text-faint" : late ? "text-crit-text" : (s.lead_time_days ?? 0) < 10 ? "text-warn" : "text-head"}`}>
+                        {none ? "never" : noBreakout ? "no breakout" : late ? `${-(s.lead_time_days ?? 0)} d late` : `${s.lead_time_days} d`}
                       </span>,
                     ]
                   })}

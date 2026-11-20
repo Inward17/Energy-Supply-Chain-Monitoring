@@ -198,6 +198,24 @@ _BRIEF_BUDGET_SPENT = (
 )
 
 
+def _war_room_evidence(top: dict[str, Any], spr: dict[str, Any]) -> dict[str, Any]:
+    """Freshness and provenance for the War Room brief. Best effort: a failure
+    here must not block the brief, so unknown values are reported as None."""
+    snapshot: dict[str, Any] = {}
+    try:
+        snapshot = compute_current_sdi()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("war-room evidence: SDI snapshot unavailable (%s)", type(exc).__name__)
+    return {
+        "newest_event_at": snapshot.get("event_source_at"),
+        "market_close": snapshot.get("market_source_date"),
+        "ais_status": snapshot.get("ais_status"),
+        "graph_status": "live" if get_driver() is not None else "seed",
+        "route_basis": top.get("route_basis", "estimated"),
+        "spr_assumptions": spr.get("assumptions", []),
+    }
+
+
 def _cached_brief(key: tuple, build) -> str:
     now = time.monotonic()
     with _brief_lock:
@@ -918,11 +936,13 @@ def run_war_room(req: WarRoomRequest, request: Request) -> dict[str, Any]:
             tuple(sorted(req.excluded_countries)), req.strict_grade_match,
             req.gdp_impact_rate, req.run_rate_cut, req.industrial_cut, req.transport_cut,
         )
+        evidence = _war_room_evidence(top, spr)
         briefing_text = _cached_brief(brief_key, lambda: generate_emergency_brief(
             scenario_name=req.scenario_name,
             target_refinery=req.destination_refinery or "Jamnagar",
             spr_data=spr,
             reroute_df=df_for_brief,
+            evidence=evidence,
         ))
 
         return {
@@ -948,6 +968,10 @@ def run_war_room(req: WarRoomRequest, request: Request) -> dict[str, Any]:
             },
             "burndown_series": burndown_list,
             "executive_brief": briefing_text,
+            # What the brief rests on, shown beside it. The AI text is a draft
+            # narrative over these structured figures, not a reviewed plan.
+            "evidence": evidence,
+            "brief_reviewed": False,
         }
     except HTTPException:
         raise
@@ -1099,8 +1123,19 @@ def get_backtest(
                         
             current += timedelta(days=1)
             
-        verdict = "System did not generate an alert before the market reacted."
-        lead_time_days = 0
+        # Lead time exists only when both observations exist. 0 means "same
+        # day"; a missing observation is null plus which one is missing.
+        lead_time_days: int | None = None
+        missing = [
+            name for name, value in (("alert", system_alert_date), ("market_reaction", market_reaction_date))
+            if value is None
+        ]
+        if missing == ["alert", "market_reaction"]:
+            verdict = "No lead time: the SDI never crossed the threshold and Brent never broke out in this window."
+        elif missing == ["alert"]:
+            verdict = f"No lead time: Brent broke out on {market_reaction_date.isoformat()} but the SDI never crossed {sdi_threshold:g}."
+        elif missing == ["market_reaction"]:
+            verdict = f"No lead time: the SDI crossed {sdi_threshold:g} on {system_alert_date.isoformat()} but Brent never broke out (>1.5σ) in this window."
         if system_alert_date and market_reaction_date:
             lead_time_days = (market_reaction_date - system_alert_date).days
             if lead_time_days > 0:
@@ -1123,7 +1158,7 @@ def get_backtest(
                 "lead_time_days": (
                     (market_reaction_date - alert_date).days
                     if alert_date and market_reaction_date
-                    else 0
+                    else None
                 ),
             })
 
@@ -1132,7 +1167,12 @@ def get_backtest(
             "system_alert_date": system_alert_date.isoformat() if system_alert_date else None,
             "market_reaction_date": market_reaction_date.isoformat() if market_reaction_date else None,
             "lead_time_days": lead_time_days,
+            "missing_observations": missing,
             "verdict": verdict,
+            # Historical AIS does not exist, so the vessel weight is
+            # redistributed: backtests are 3-signal, the live index 4-signal.
+            "signals": 3,
+            "methodology": "3-signal composite (geopolitical, Brent, freight); the live index adds AIS vessel density.",
             "sdi_threshold": sdi_threshold,
             "threshold_sensitivity": sensitivity,
         }
