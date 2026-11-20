@@ -87,6 +87,8 @@ export interface RiskEvent {
   source_urls?: string[]
   /** false: sources are the whole scoring batch, not tied to this event. */
   sources_verified?: boolean | null
+  /** false: high severity without independent sources, so severity was capped. */
+  corroborated?: boolean | null
   source_fetched_at?: string
   scored_at: string
 }
@@ -462,8 +464,10 @@ export interface BacktestJob {
 export const fetchBacktestJobs = () =>
   apiFetch<BacktestJob[]>("/api/backtest/jobs")
 
-export const triggerBacktest = (eventName: string) =>
+/** Maintainer-only: the backend requires X-Admin-Key (backtests spend Gemini quota). */
+export const triggerBacktest = (eventName: string, adminKey: string) =>
   apiFetch<{job_id: number, status: string}>("/api/backtest/trigger", {
     method: "POST",
+    headers: { "Content-Type": "application/json", "X-Admin-Key": adminKey },
     body: JSON.stringify({ event_name: eventName })
   })

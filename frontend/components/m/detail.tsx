@@ -148,6 +148,12 @@ function EventBody({ e }: { e: RiskEventDetail }) {
         </div>
       </div>
       <Bar value={e.severity} color={riskColor(e.severity)} />
+      {e.corroborated === false && (
+        <p className="rounded-[10px] bg-warn-box px-3 py-2 text-xs leading-relaxed text-fg">
+          <strong className="text-head">Uncorroborated.</strong> The model rated this high-impact, but too few independent
+          sources reported it, so its severity is capped until more do.
+        </p>
+      )}
       <div className="flex flex-col gap-2">
         <Eyebrow>Briefing</Eyebrow>
         <p className="whitespace-pre-wrap text-sm leading-relaxed text-fg">{e.summary}</p>

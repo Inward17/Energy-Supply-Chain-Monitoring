@@ -38,9 +38,10 @@ that need a compromised maintainer account or machine.
 
 ## What is already in place
 
-- No authentication by design (public read-only dashboard); expensive
-  endpoints are protected by bounded inputs and per-client + global rate
-  limits.
+- The dashboard is public and read-only. Starting a backtest (hundreds of
+  Gemini calls) requires the maintainer's `ADMIN_API_KEY`. War Room AI briefs
+  are capped per day in Postgres, on top of bounded inputs and per-client +
+  global rate limits.
 - Secrets live only in platform settings and GitHub secrets; `.env` files are
   git-ignored and excluded from images.
 - CodeQL, Dependabot and GitGuardian run on every pull request.

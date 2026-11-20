@@ -56,6 +56,9 @@ from src.utils.constants import (
     CHOKEPOINTS_SET,
     SENTINEL_GEMINI_MODEL,
     GEMINI_FALLBACK_MODEL,
+    CORROBORATION_MIN_SOURCES,
+    CORROBORATION_SEVERITY,
+    UNCORROBORATED_SEVERITY_CAP,
     SENTINEL_DELTA_D_HIGH,
     SENTINEL_DELTA_D_LOW,
     SENTINEL_SEVERITY_THRESHOLD,
@@ -683,6 +686,32 @@ def _normalise_event(parsed: dict[str, Any]) -> dict[str, Any]:
 # Public Interface
 # ---------------------------------------------------------------------------
 
+def _source_sites(rows: list[dict[str, Any]]) -> set[str]:
+    sites = set()
+    for r in rows:
+        host = (urlparse(r.get("url") or "").hostname or "").lower()
+        if host:
+            sites.add(host.removeprefix("www."))
+    return sites
+
+
+def corroborate(
+    severity: float, rows: list[dict[str, Any]], sources_verified: bool
+) -> tuple[float, bool | None]:
+    """Apply the corroboration rule to a model-scored severity.
+
+    A high-impact score rests on one model reading of scraped headlines, so it
+    needs model-cited headlines from several distinct sites. Below the
+    threshold the event is not assessed (None). Batch-context sources
+    (sources_verified False) never count as corroboration.
+    """
+    if severity < CORROBORATION_SEVERITY:
+        return severity, None
+    if sources_verified and len(_source_sites(rows)) >= CORROBORATION_MIN_SOURCES:
+        return severity, True
+    return min(severity, UNCORROBORATED_SEVERITY_CAP), False
+
+
 def _rows_for_indices(
     batch: list[dict[str, Any]],
     indices: Any,
@@ -818,7 +847,15 @@ def process_unprocessed_batch(batch_size: int = 10) -> int:
         # newest headline would set the decay clock for an older incident.
         rows_for_event, sources_verified = _rows_for_indices(batch, scored.get("headline_indices"))
 
-        severity = float(scored.get("severity", 0.0) or 0.0)
+        model_severity = float(scored.get("severity", 0.0) or 0.0)
+        severity, corroborated = corroborate(model_severity, rows_for_event, sources_verified)
+        if corroborated is False:
+            scored["severity"] = severity
+            scored["severity_reasoning"] = (
+                f"[Uncorroborated: model scored {model_severity:.2f}, capped at {severity:.2f} "
+                f"until at least {CORROBORATION_MIN_SOURCES} independent sources report it.] "
+                + str(scored.get("severity_reasoning") or "")
+            )
         disruption_type = str(scored.get("disruption_type", "unknown") or "unknown")
 
         delta_d = (
@@ -848,6 +885,7 @@ def process_unprocessed_batch(batch_size: int = 10) -> int:
             "sdi_score": sdi,
             "source_urls": [r["url"] for r in rows_for_event if r.get("url")],
             "sources_verified": sources_verified,
+            "corroborated": corroborated,
             "source_fetched_at": max(fetched_times, default=None),
             "article_category": dominant_category,
         }

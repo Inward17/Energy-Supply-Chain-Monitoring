@@ -84,6 +84,13 @@ FIXER_WEIGHT_CONGESTION: float = 0.15
 #: Gemini model used for news analysis; overridable via GEMINI_MODEL env var
 SENTINEL_GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
+#: Corroboration rule for Sentinel events. A model-scored severity at or above
+#: the threshold needs model-cited headlines from at least MIN_SOURCES distinct
+#: sites; otherwise it is capped and the event is stored as uncorroborated.
+CORROBORATION_SEVERITY: float = float(os.getenv("CORROBORATION_SEVERITY", "0.7"))
+CORROBORATION_MIN_SOURCES: int = int(os.getenv("CORROBORATION_MIN_SOURCES", "2"))
+UNCORROBORATED_SEVERITY_CAP: float = float(os.getenv("UNCORROBORATED_SEVERITY_CAP", "0.6"))
+
 #: Lighter model tried once when the primary answers 503 (overloaded).
 GEMINI_FALLBACK_MODEL: str = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-flash-lite-latest")
 
